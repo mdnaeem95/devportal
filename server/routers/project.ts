@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { router, protectedProcedure, publicProcedure } from "../trpc";
-import { projects, clients, milestones } from "../db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { projects, clients, milestones, invoices, users } from "../db/schema";
+import { eq, desc, and, asc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 const projectStatusSchema = z.enum([
@@ -71,7 +71,7 @@ export const projectRouter = router({
       // Get milestones separately
       const projectMilestones = await ctx.db.query.milestones.findMany({
         where: eq(milestones.projectId, input.id),
-        orderBy: [milestones.order],
+        orderBy: [asc(milestones.order)],
       });
 
       return {
@@ -176,7 +176,7 @@ export const projectRouter = router({
 
       const [updated] = await ctx.db
         .update(projects)
-        .set(data)
+        .set({ ...data, updatedAt: new Date() })
         .where(eq(projects.id, id))
         .returning();
 
@@ -227,38 +227,70 @@ export const projectRouter = router({
         });
       }
 
-      // Check password if required
-      if (project.publicPassword && project.publicPassword !== input.password) {
-        throw new TRPCError({
-          code: "UNAUTHORIZED",
-          message: "Invalid password",
-        });
+      // Check if password protected but no/wrong password provided
+      const isLocked = !!project.publicPassword;
+      if (isLocked && project.publicPassword !== input.password) {
+        return {
+          id: project.id,
+          name: project.name,
+          isLocked: true,
+          status: project.status,
+        };
       }
 
       // Get milestones
       const projectMilestones = await ctx.db.query.milestones.findMany({
         where: eq(milestones.projectId, project.id),
-        orderBy: [milestones.order],
+        orderBy: [asc(milestones.order)],
       });
 
-      // Return sanitized data (no sensitive info)
+      // Get invoices
+      const projectInvoices = await ctx.db.query.invoices.findMany({
+        where: eq(invoices.projectId, project.id),
+        orderBy: [desc(invoices.createdAt)],
+      });
+
+      // Get user/business info
+      const user = await ctx.db.query.users.findFirst({
+        where: eq(users.id, project.userId),
+      });
+
+      // Return data for public view
       return {
         id: project.id,
+        publicId: project.publicId,
         name: project.name,
         description: project.description,
         status: project.status,
         startDate: project.startDate,
         endDate: project.endDate,
+        isLocked: false,
         client: {
           name: project.client.name,
           company: project.client.company,
+          email: project.client.email,
         },
+        business: user ? {
+          name: user.businessName || user.name,
+          email: user.email,
+          logoUrl: user.logoUrl,
+        } : null,
         milestones: projectMilestones.map((m) => ({
           id: m.id,
           name: m.name,
           description: m.description,
+          amount: m.amount,
           status: m.status,
           dueDate: m.dueDate,
+        })),
+        invoices: projectInvoices.map((inv) => ({
+          id: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          total: inv.total,
+          currency: inv.currency,
+          status: inv.status,
+          dueDate: inv.dueDate,
+          payToken: inv.payToken,
         })),
       };
     }),

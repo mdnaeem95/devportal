@@ -1,37 +1,88 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
-import { formatCurrency, formatDate, cn } from "@/lib/utils";
-import { Loader2, CheckCircle2, Clock, AlertCircle, CreditCard, Building, Calendar } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { InvoicePDFButton } from "@/components/pdf/pdf-download-button";
+import { Loader2, Building, CheckCircle2, FileText, CreditCard, AlertCircle, ExternalLink, Download } from "lucide-react";
 
-const statusConfig = {
-  draft: { label: "Draft", color: "bg-gray-500" },
-  sent: { label: "Pending Payment", color: "bg-blue-500" },
-  viewed: { label: "Pending Payment", color: "bg-blue-500" },
-  paid: { label: "Paid", color: "bg-green-500" },
-  overdue: { label: "Overdue", color: "bg-red-500" },
-  cancelled: { label: "Cancelled", color: "bg-gray-500" },
-};
+interface LineItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+}
 
-export default function PublicPaymentPage({ params }: { params: { token: string } }) {
+// Helper to format currency
+function formatCurrency(cents: number, currency = "USD"): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+  }).format(cents / 100);
+}
+
+// Helper to format date
+function formatDate(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+export default function PaymentPage({ params }: { params: { token: string } }) {
+  const searchParams = useSearchParams();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const { data: invoice, isLoading, error } = trpc.invoice.getByToken.useQuery({
+  const success = searchParams.get("success") === "true";
+  const cancelled = searchParams.get("cancelled") === "true";
+
+  const { data: invoice, isLoading, refetch } = trpc.invoice.getByToken.useQuery({
     token: params.token,
   });
 
-  // Simulated payment handler (would integrate with Stripe in production)
+  // Refetch if we just completed payment
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => refetch(), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [success, refetch]);
+
   const handlePayment = async () => {
     setIsProcessing(true);
-    // In production: Create Stripe checkout session and redirect
-    // For now, simulate a delay
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    alert("Payment integration coming soon! This would redirect to Stripe Checkout.");
-    setIsProcessing(false);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payToken: params.token }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to create checkout session");
+      }
+
+      // Redirect to Stripe Checkout
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error("No checkout URL returned");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Payment failed");
+      setIsProcessing(false);
+    }
   };
 
   if (isLoading) {
@@ -42,17 +93,17 @@ export default function PublicPaymentPage({ params }: { params: { token: string 
     );
   }
 
-  if (error?.data?.code === "NOT_FOUND" || !invoice) {
+  if (!invoice) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
         <Card className="w-full max-w-md bg-card/50 backdrop-blur-sm">
           <CardContent className="py-12 text-center">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary">
-              <AlertCircle className="h-7 w-7 text-muted-foreground" />
+              <FileText className="h-7 w-7 text-muted-foreground" />
             </div>
             <h1 className="mt-6 text-xl font-semibold">Invoice Not Found</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              This invoice doesn't exist or the link may have expired.
+              This invoice doesn't exist or the link has expired.
             </p>
           </CardContent>
         </Card>
@@ -60,27 +111,15 @@ export default function PublicPaymentPage({ params }: { params: { token: string 
     );
   }
 
-  const lineItems = invoice.lineItems as Array<{
-    id: string;
-    description: string;
-    quantity: number;
-    unitPrice: number;
-    amount: number;
-  }>;
-
-  const isOverdue = 
-    invoice.status !== "paid" && 
-    invoice.status !== "cancelled" && 
-    new Date(invoice.dueDate) < new Date();
-
   const isPaid = invoice.status === "paid";
-  const canPay = ["sent", "viewed", "overdue"].includes(invoice.status);
+  const isOverdue = !isPaid && invoice.dueDate && new Date(invoice.dueDate) < new Date();
+  const lineItems = invoice.lineItems as LineItem[];
 
   return (
     <>
       {/* Header */}
-      <header className="relative z-10 border-b border-border/50 bg-card/50 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-6">
+      <header className="sticky top-0 z-50 border-b border-border/50 bg-background/95 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-6">
           <div className="flex items-center gap-3">
             {invoice.business?.logoUrl ? (
               <img
@@ -89,269 +128,258 @@ export default function PublicPaymentPage({ params }: { params: { token: string 
                 className="h-10 w-10 rounded-lg object-cover"
               />
             ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg gradient-primary">
-                <Building className="h-5 w-5 text-white" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
+                <Building className="h-5 w-5 text-primary-foreground" />
               </div>
             )}
             <div>
-              <p className="font-semibold">{invoice.business?.name || "Invoice"}</p>
-              <p className="text-xs text-muted-foreground">Invoice {invoice.invoiceNumber}</p>
+              <p className="font-semibold">{invoice.business?.name || "Developer"}</p>
+              <p className="text-xs text-muted-foreground">Invoice</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className={cn(
-              "h-2 w-2 rounded-full",
-              isPaid ? "bg-green-500" : isOverdue ? "bg-red-500" : "bg-blue-500"
-            )} />
-            <span className="text-sm text-muted-foreground">
-              {isPaid ? "Paid" : isOverdue ? "Overdue" : "Pending"}
-            </span>
-          </div>
+          <Badge
+            variant={isPaid ? "default" : isOverdue ? "destructive" : "secondary"}
+            className={isPaid ? "bg-green-500" : ""}
+          >
+            {isPaid ? "Paid" : isOverdue ? "Overdue" : invoice.status}
+          </Badge>
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto max-w-4xl px-6 py-8">
-        {/* Status Banner */}
-        {isPaid && (
-          <div className="mb-6 flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 p-4">
-            <CheckCircle2 className="h-6 w-6 text-green-400" />
-            <div>
-              <p className="font-semibold text-green-400">Payment Complete</p>
-              <p className="text-sm text-muted-foreground">
-                Thank you! This invoice has been paid.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {isOverdue && !isPaid && (
-          <div className="mb-6 flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
-            <Clock className="h-6 w-6 text-red-400" />
-            <div>
-              <p className="font-semibold text-red-400">Payment Overdue</p>
-              <p className="text-sm text-muted-foreground">
-                This invoice was due on {formatDate(invoice.dueDate)}. Please pay as soon as possible.
-              </p>
-            </div>
-          </div>
-        )}
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          {/* Invoice Details */}
-          <div className="lg:col-span-2">
-            <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
-              {/* Header */}
-              <div className="bg-secondary/50 p-6 border-b border-border/50">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Invoice</p>
-                    <h1 className="text-2xl font-bold">{invoice.invoiceNumber}</h1>
-                    {invoice.project && (
-                      <p className="text-muted-foreground mt-1">
-                        Project: {invoice.project.name}
-                      </p>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-muted-foreground">Amount Due</p>
-                    <p className={cn(
-                      "text-3xl font-bold",
-                      isPaid ? "text-success" : ""
-                    )}>
-                      {formatCurrency(invoice.total, invoice.currency ?? "SGD")}
-                    </p>
-                  </div>
+      <main className="mx-auto max-w-3xl px-6 py-8">
+        {/* Success Message */}
+        {(success || isPaid) && (
+          <Card className="mb-8 border-green-200 bg-green-50">
+            <CardContent className="py-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+                  <CheckCircle2 className="h-6 w-6 text-green-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-green-700">Payment Successful!</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Thank you for your payment. A receipt has been sent to your email.
+                  </p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        )}
 
-              <CardContent className="p-6">
-                {/* Bill To / From */}
-                <div className="grid gap-6 sm:grid-cols-2 mb-8">
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-2">From</p>
-                    <p className="font-semibold">{invoice.business?.name}</p>
-                    <p className="text-muted-foreground text-sm">{invoice.business?.email}</p>
-                    {invoice.business?.address && (
-                      <p className="text-muted-foreground text-sm mt-1">{invoice.business.address}</p>
-                    )}
-                    {invoice.business?.taxId && (
-                      <p className="text-muted-foreground text-sm">Tax ID: {invoice.business.taxId}</p>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-2">Bill To</p>
-                    <p className="font-semibold">{invoice.client.name}</p>
-                    {invoice.client.company && (
-                      <p className="text-muted-foreground text-sm">{invoice.client.company}</p>
-                    )}
-                    <p className="text-muted-foreground text-sm">{invoice.client.email}</p>
-                  </div>
+        {/* Cancelled Message */}
+        {cancelled && !isPaid && (
+          <Card className="mb-8 border-amber-200 bg-amber-50">
+            <CardContent className="py-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+                  <AlertCircle className="h-6 w-6 text-amber-600" />
                 </div>
-
-                {/* Dates */}
-                <div className="flex gap-6 mb-8 text-sm">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Issued:</span>
-                    <span>{formatDate(invoice.createdAt)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Due:</span>
-                    <span className={isOverdue && !isPaid ? "text-destructive font-medium" : ""}>
-                      {formatDate(invoice.dueDate)}
-                    </span>
-                  </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-amber-700">Payment Cancelled</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Your payment was cancelled. You can try again when you're ready.
+                  </p>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-                {/* Line Items */}
-                <div className="border border-border/50 rounded-lg overflow-hidden">
-                  <table className="w-full">
-                    <thead className="bg-secondary/50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Description</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground w-20">Qty</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground w-28">Price</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground w-28">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/50">
-                      {lineItems.map((item) => (
-                        <tr key={item.id}>
-                          <td className="px-4 py-3">{item.description}</td>
-                          <td className="px-4 py-3 text-right text-muted-foreground">{item.quantity}</td>
-                          <td className="px-4 py-3 text-right text-muted-foreground">
-                            {formatCurrency(invoice.total, invoice.currency ?? "SGD")}
-                          </td>
-                          <td className="px-4 py-3 text-right font-medium">
-                            {formatCurrency(invoice.total, invoice.currency ?? "SGD")}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+        {/* Error Message */}
+        {error && (
+          <Card className="mb-8 border-red-200 bg-red-50">
+            <CardContent className="py-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+                  <AlertCircle className="h-6 w-6 text-red-600" />
                 </div>
-
-                {/* Totals */}
-                <div className="mt-4 flex justify-end">
-                  <div className="w-64 space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Subtotal</span>
-                      <span>{formatCurrency(invoice.total, invoice.currency ?? "SGD")}</span>
-                    </div>
-                    {invoice.tax && invoice.tax > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">
-                          Tax {invoice.taxRate && `(${invoice.taxRate}%)`}
-                        </span>
-                        <span>{formatCurrency(invoice.total, invoice.currency ?? "SGD")}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between border-t border-border/50 pt-2 text-lg font-bold">
-                      <span>Total</span>
-                      <span className={isPaid ? "text-success" : ""}>
-                        {formatCurrency(invoice.total, invoice.currency ?? "SGD")}
-                      </span>
-                    </div>
-                  </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-red-700">Payment Error</h2>
+                  <p className="text-sm text-muted-foreground">{error}</p>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-                {/* Notes */}
-                {invoice.notes && (
-                  <div className="mt-8 pt-6 border-t border-border/50">
-                    <p className="text-sm text-muted-foreground mb-2">Notes</p>
-                    <p className="text-sm whitespace-pre-wrap">{invoice.notes}</p>
-                  </div>
+        {/* Invoice Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold">Invoice {invoice.invoiceNumber}</h1>
+          <p className="mt-2 text-muted-foreground">
+            {isPaid
+              ? `Paid on ${formatDate(invoice.paidAt!)}`
+              : `Due ${formatDate(invoice.dueDate)}`}
+          </p>
+        </div>
+
+        {/* Amount Card */}
+        <Card className="mb-8 bg-card/50 backdrop-blur-sm">
+          <CardContent className="py-8 text-center">
+            <p className="text-sm text-muted-foreground">Amount Due</p>
+            <p className={cn(
+              "mt-2 text-5xl font-bold",
+              isPaid && "text-green-600"
+            )}>
+              {formatCurrency(invoice.total, invoice.currency ?? "USD")}
+            </p>
+            {!isPaid && (
+              <Button
+                size="lg"
+                className="mt-6 text-lg px-8"
+                onClick={handlePayment}
+                disabled={isProcessing}
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="mr-2 h-5 w-5" />
+                    Pay Now
+                  </>
                 )}
-              </CardContent>
-            </Card>
-          </div>
+              </Button>
+            )}
+            {isPaid && (
+              <div className="mt-6">
+                <InvoicePDFButton
+                  invoiceId={invoice.id}
+                  payToken={params.token}
+                  variant="outline"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Download Receipt
+                </InvoicePDFButton>
+              </div>
+            )}
+            {!isPaid && (
+              <p className="mt-4 text-xs text-muted-foreground flex items-center justify-center gap-1">
+                <ExternalLink className="h-3 w-3" />
+                Secure payment powered by Stripe
+              </p>
+            )}
+          </CardContent>
+        </Card>
 
-          {/* Payment Sidebar */}
-          <div className="space-y-4">
-            {canPay && (
-              <Card className="bg-card/50 backdrop-blur-sm">
-                <CardContent className="p-6">
-                  <h3 className="font-semibold mb-4">Pay This Invoice</h3>
-                  
-                  <div className="space-y-4">
-                    <div className="rounded-lg border border-border/50 bg-secondary/30 p-4">
-                      <div className="flex justify-between mb-2">
-                        <span className="text-muted-foreground">Amount Due</span>
-                        <span className="font-bold text-lg">
-                          {formatCurrency(invoice.total, invoice.currency ?? "SGD")}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Due Date</span>
-                        <span className={isOverdue ? "text-destructive" : ""}>
-                          {formatDate(invoice.dueDate)}
-                        </span>
-                      </div>
-                    </div>
+        {/* Details */}
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Bill To */}
+          <Card className="bg-card/50 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="text-sm text-muted-foreground">Bill To</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="font-medium">{invoice.client.name}</p>
+              {invoice.client.company && (
+                <p className="text-sm text-muted-foreground">{invoice.client.company}</p>
+              )}
+              <p className="text-sm text-muted-foreground">{invoice.client.email}</p>
+            </CardContent>
+          </Card>
 
-                    <Button
-                      className="w-full gradient-primary border-0 h-12 text-base"
-                      onClick={handlePayment}
-                      disabled={isProcessing}
-                    >
-                      {isProcessing ? (
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                      ) : (
-                        <CreditCard className="h-5 w-5" />
-                      )}
-                      {isProcessing ? "Processing..." : "Pay Now"}
-                    </Button>
+          {/* From */}
+          <Card className="bg-card/50 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="text-sm text-muted-foreground">From</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="font-medium">{invoice.business?.name}</p>
+              <p className="text-sm text-muted-foreground">{invoice.business?.email}</p>
+              {invoice.business?.address && (
+                <p className="text-sm text-muted-foreground whitespace-pre-line">
+                  {invoice.business.address}
+                </p>
+              )}
+              {invoice.business?.taxId && (
+                <p className="text-sm text-muted-foreground">
+                  Tax ID: {invoice.business.taxId}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
-                    <p className="text-xs text-center text-muted-foreground">
-                      Secure payment powered by Stripe
+        {/* Line Items */}
+        <Card className="mt-6 bg-card/50 backdrop-blur-sm">
+          <CardHeader>
+            <CardTitle className="text-base">Items</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {lineItems.map((item) => (
+                <div key={item.id} className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <p className="font-medium">{item.description}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {item.quantity} × {formatCurrency(item.unitPrice, invoice.currency ?? "USD")}
                     </p>
                   </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {isPaid && (
-              <Card className="bg-card/50 backdrop-blur-sm border-green-500/30">
-                <CardContent className="p-6 text-center">
-                  <CheckCircle2 className="h-12 w-12 text-green-400 mx-auto mb-3" />
-                  <h3 className="font-semibold text-green-400">Payment Complete</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Thank you for your payment!
+                  <p className="font-semibold">
+                    {formatCurrency(item.amount, invoice.currency ?? "USD")}
                   </p>
-                </CardContent>
-              </Card>
-            )}
+                </div>
+              ))}
 
-            {/* Contact */}
-            <Card className="bg-card/50 backdrop-blur-sm">
-              <CardContent className="p-6">
-                <h3 className="font-semibold mb-3">Questions?</h3>
-                <p className="text-sm text-muted-foreground mb-3">
-                  Contact {invoice.business?.name} directly:
-                </p>
-                <a
-                  href={`mailto:${invoice.business?.email}`}
-                  className="text-sm text-primary hover:underline"
-                >
-                  {invoice.business?.email}
-                </a>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+              <div className="border-t border-border/50 pt-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span>{formatCurrency(invoice.subtotal, invoice.currency ?? "USD")}</span>
+                </div>
+                {(invoice.tax ?? 0) > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Tax {invoice.taxRate && `(${invoice.taxRate}%)`}
+                    </span>
+                    <span>{formatCurrency(invoice.tax ?? 0, invoice.currency ?? "USD")}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-lg font-semibold pt-2 border-t border-border/50">
+                  <span>Total</span>
+                  <span className={isPaid ? "text-green-600" : ""}>
+                    {formatCurrency(invoice.total, invoice.currency ?? "USD")}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Notes */}
+        {invoice.notes && (
+          <Card className="mt-6 bg-card/50 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="text-base">Notes</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                {invoice.notes}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Project Info */}
+        {invoice.project && (
+          <Card className="mt-6 bg-card/50 backdrop-blur-sm">
+            <CardContent className="py-4">
+              <p className="text-sm text-muted-foreground">
+                Project: <span className="text-foreground">{invoice.project.name}</span>
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </main>
 
       {/* Footer */}
-      <footer className="relative z-10 border-t border-border/50 bg-card/30 mt-12">
-        <div className="mx-auto max-w-4xl px-6 py-6">
+      <footer className="border-t border-border/50 bg-card/30 mt-12">
+        <div className="mx-auto max-w-3xl px-6 py-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-            <p>Invoice {invoice.invoiceNumber} • {invoice.business?.name}</p>
+            <p>Invoice {invoice.invoiceNumber} for {invoice.client.name}</p>
             <div className="flex items-center gap-2">
               <span>Powered by</span>
-              <Link href="/" className="font-medium text-foreground hover:text-primary transition-colors">
-                DevPortal
-              </Link>
+              <span className="font-medium text-foreground">DevPortal</span>
             </div>
           </div>
         </div>

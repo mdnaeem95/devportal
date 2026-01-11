@@ -5,6 +5,8 @@ import { dashboardRouter } from "./dashboard";
 import { invoiceRouter } from "./invoice";
 import { templateRouter } from "./template";
 import { contractRouter } from "./contract";
+import { deliverableRouter } from "./deliverable";
+import { stripeRouter } from "./stripe";
 
 export const appRouter = router({
   client: clientRouter,
@@ -13,8 +15,8 @@ export const appRouter = router({
   invoice: invoiceRouter,
   template: templateRouter,
   contract: contractRouter,
-  // TODO: Add more routers as we build them
-  // deliverable: deliverableRouter,
+  deliverable: deliverableRouter,
+  stripe: stripeRouter,
 });
 
 export type AppRouter = typeof appRouter;

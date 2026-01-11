@@ -1,17 +1,39 @@
 import { z } from "zod";
 import { router, protectedProcedure, publicProcedure } from "../trpc";
-import { contracts, clients, projects, templates, users, milestones } from "../db/schema";
+import { contracts, clients, projects, users, templates, milestones } from "../db/schema";
 import { eq, desc, and, asc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { nanoid } from "nanoid";
+import { sendContractEmail, sendContractSignedEmails, sendContractDeclinedEmail } from "@/lib/emails";
+
+const contractStatusSchema = z.enum([
+  "draft",
+  "sent",
+  "viewed",
+  "signed",
+  "declined",
+  "expired",
+]);
+
+// Helper to format date
+function formatDate(date: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
 
 export const contractRouter = router({
-  // List all contracts for the current user
+  // List contracts for user
   list: protectedProcedure
     .input(
       z.object({
         projectId: z.string().optional(),
         clientId: z.string().optional(),
-        status: z.enum(["draft", "sent", "viewed", "signed", "declined", "expired"]).optional(),
+        status: contractStatusSchema.optional(),
       }).optional()
     )
     .query(async ({ ctx, input }) => {
@@ -27,7 +49,7 @@ export const contractRouter = router({
         conditions.push(eq(contracts.status, input.status));
       }
 
-      const results = await ctx.db.query.contracts.findMany({
+      return ctx.db.query.contracts.findMany({
         where: and(...conditions),
         with: {
           client: true,
@@ -35,11 +57,9 @@ export const contractRouter = router({
         },
         orderBy: [desc(contracts.createdAt)],
       });
-
-      return results;
     }),
 
-  // Get a single contract by ID
+  // Get single contract
   get: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -53,162 +73,94 @@ export const contractRouter = router({
       });
 
       if (!contract) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Contract not found",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Contract not found" });
       }
 
       if (contract.userId !== ctx.user.id) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "You don't have access to this contract",
-        });
+        throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
       }
 
       return contract;
     }),
 
-  // Create a new contract
-  create: protectedProcedure
-    .input(
-      z.object({
-        name: z.string().min(1, "Name is required"),
-        clientId: z.string(),
-        projectId: z.string().optional(),
-        templateId: z.string().optional(),
-        content: z.string().min(1, "Content is required"),
-        expiresAt: z.date().optional(),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      // Verify client belongs to user
-      const client = await ctx.db.query.clients.findFirst({
-        where: eq(clients.id, input.clientId),
-      });
-
-      if (!client || client.userId !== ctx.user.id) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Client not found",
-        });
-      }
-
-      // Verify project if provided
-      if (input.projectId) {
-        const project = await ctx.db.query.projects.findFirst({
-          where: eq(projects.id, input.projectId),
-        });
-
-        if (!project || project.userId !== ctx.user.id) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Project not found",
-          });
-        }
-      }
-
-      const [contract] = await ctx.db
-        .insert(contracts)
-        .values({
-          userId: ctx.user.id,
-          clientId: input.clientId,
-          projectId: input.projectId,
-          templateId: input.templateId,
-          name: input.name,
-          content: input.content,
-          expiresAt: input.expiresAt,
-        })
-        .returning();
-
-      return contract;
-    }),
-
-  // Create contract from template with variable substitution
+  // Create contract from template
   createFromTemplate: protectedProcedure
     .input(
       z.object({
         templateId: z.string(),
         clientId: z.string(),
         projectId: z.string().optional(),
-        name: z.string(),
+        name: z.string().min(1),
         variables: z.record(z.string()).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // Get template
-      const template = await ctx.db.query.templates.findFirst({
-        where: eq(templates.id, input.templateId),
-      });
-
-      if (!template) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Template not found",
-        });
-      }
-
       // Verify client
       const client = await ctx.db.query.clients.findFirst({
         where: eq(clients.id, input.clientId),
       });
 
       if (!client || client.userId !== ctx.user.id) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Client not found",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
       }
+
+      // Get template
+      const template = await ctx.db.query.templates.findFirst({
+        where: eq(templates.id, input.templateId),
+      });
+
+      if (!template) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Template not found" });
+      }
+
+      // Get user info for variables
+      const user = await ctx.db.query.users.findFirst({
+        where: eq(users.id, ctx.user.id),
+      });
 
       // Get project if provided
       let project = null;
       let projectMilestones: Array<{ name: string; amount: number; dueDate: Date | null }> = [];
-      let milestonesText = "";
-      
       if (input.projectId) {
         project = await ctx.db.query.projects.findFirst({
           where: eq(projects.id, input.projectId),
         });
 
         if (project) {
-          // Fetch milestones separately
           projectMilestones = await ctx.db.query.milestones.findMany({
             where: eq(milestones.projectId, project.id),
             orderBy: [asc(milestones.order)],
           });
-
-          milestonesText = projectMilestones
-            .map((m, i) => `${i + 1}. **${m.name}** - $${(m.amount / 100).toFixed(2)}${m.dueDate ? ` (Due: ${new Date(m.dueDate).toLocaleDateString()})` : ""}`)
-            .join("\n");
         }
       }
 
-      // Get user info
-      const user = ctx.user;
-
-      // Substitute variables
-      let content = template.content;
-      const defaultVariables: Record<string, string> = {
-        date: new Date().toLocaleDateString(),
-        client_name: client.name,
-        client_company: client.company || "",
-        client_email: client.email,
-        developer_name: user.businessName || user.name || "",
-        developer_email: user.email || "",
-        project_name: project?.name || input.name,
-        start_date: project?.startDate ? new Date(project.startDate).toLocaleDateString() : "TBD",
-        end_date: project?.endDate ? new Date(project.endDate).toLocaleDateString() : "TBD",
-        total_amount: project?.totalAmount ? `$${(project.totalAmount / 100).toFixed(2)}` : "TBD",
-        milestones: milestonesText || "To be defined",
-        scope_description: project?.description || "To be defined",
+      // Build variables for template
+      const variables: Record<string, string> = {
         ...input.variables,
+        clientName: client.name,
+        clientEmail: client.email,
+        clientCompany: client.company || "",
+        developerName: user?.name || "",
+        developerEmail: user?.email || "",
+        businessName: user?.businessName || user?.name || "",
+        projectName: project?.name || "",
+        projectDescription: project?.description || "",
+        totalAmount: project?.totalAmount
+          ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(project.totalAmount / 100)
+          : "",
+        date: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+        milestones: projectMilestones.length > 0
+          ? projectMilestones
+              .map((m, i) => `${i + 1}. ${m.name} - $${(m.amount / 100).toFixed(2)}`)
+              .join("\n")
+          : "To be determined",
       };
 
-      // Replace all {{variable}} patterns
-      Object.entries(defaultVariables).forEach(([key, value]) => {
-        const regex = new RegExp(`{{\\s*${key}\\s*}}`, "gi");
-        content = content.replace(regex, value);
-      });
+      // Replace variables in template content
+      let content = template.content;
+      for (const [key, value] of Object.entries(variables)) {
+        content = content.replace(new RegExp(`{{${key}}}`, "g"), value);
+      }
 
       // Create contract
       const [contract] = await ctx.db
@@ -220,43 +172,74 @@ export const contractRouter = router({
           templateId: input.templateId,
           name: input.name,
           content,
+          status: "draft",
         })
         .returning();
 
       return contract;
     }),
 
-  // Update contract (only drafts)
+  // Create blank contract
+  create: protectedProcedure
+    .input(
+      z.object({
+        clientId: z.string(),
+        projectId: z.string().optional(),
+        name: z.string().min(1),
+        content: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Verify client
+      const client = await ctx.db.query.clients.findFirst({
+        where: eq(clients.id, input.clientId),
+      });
+
+      if (!client || client.userId !== ctx.user.id) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
+      }
+
+      const [contract] = await ctx.db
+        .insert(contracts)
+        .values({
+          userId: ctx.user.id,
+          clientId: input.clientId,
+          projectId: input.projectId,
+          name: input.name,
+          content: input.content,
+          status: "draft",
+        })
+        .returning();
+
+      return contract;
+    }),
+
+  // Update contract
   update: protectedProcedure
     .input(
       z.object({
         id: z.string(),
-        name: z.string().optional(),
+        name: z.string().min(1).optional(),
         content: z.string().optional(),
-        expiresAt: z.date().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
-
       const existing = await ctx.db.query.contracts.findFirst({
-        where: eq(contracts.id, id),
+        where: eq(contracts.id, input.id),
       });
 
       if (!existing || existing.userId !== ctx.user.id) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Contract not found",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Contract not found" });
       }
 
       if (existing.status !== "draft") {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Only draft contracts can be edited",
+          message: "Can only edit draft contracts",
         });
       }
 
+      const { id, ...data } = input;
       const [updated] = await ctx.db
         .update(contracts)
         .set({ ...data, updatedAt: new Date() })
@@ -272,14 +255,14 @@ export const contractRouter = router({
     .mutation(async ({ ctx, input }) => {
       const contract = await ctx.db.query.contracts.findFirst({
         where: eq(contracts.id, input.id),
-        with: { client: true },
+        with: {
+          client: true,
+          project: true,
+        },
       });
 
       if (!contract || contract.userId !== ctx.user.id) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Contract not found",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Contract not found" });
       }
 
       if (contract.status !== "draft") {
@@ -289,53 +272,44 @@ export const contractRouter = router({
         });
       }
 
-      // Set expiry to 30 days from now if not set
-      const expiresAt = contract.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      // Get user/business info
+      const user = await ctx.db.query.users.findFirst({
+        where: eq(users.id, ctx.user.id),
+      });
 
+      // Generate sign token
+      const signToken = nanoid(32);
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30); // 30 days to sign
+
+      // Update contract
       const [updated] = await ctx.db
         .update(contracts)
         .set({
           status: "sent",
+          signToken,
           sentAt: new Date(),
           expiresAt,
+          updatedAt: new Date(),
         })
         .where(eq(contracts.id, input.id))
         .returning();
 
-      // TODO: Send email to client with sign link
-      // const signUrl = `${process.env.NEXT_PUBLIC_APP_URL}/sign/${contract.signToken}`;
-
-      return updated;
-    }),
-
-  // Developer pre-sign
-  developerSign: protectedProcedure
-    .input(
-      z.object({
-        id: z.string(),
-        signature: z.string(), // Base64 signature or typed name
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      const contract = await ctx.db.query.contracts.findFirst({
-        where: eq(contracts.id, input.id),
+      // Send email to client
+      const signUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/sign/${signToken}`;
+      
+      await sendContractEmail({
+        clientEmail: contract.client.email,
+        clientName: contract.client.name,
+        contractName: contract.name,
+        projectName: contract.project?.name,
+        developerName: user?.name || "Developer",
+        developerEmail: user?.email || "",
+        signUrl,
+        expiresAt: formatDate(expiresAt),
+        businessName: user?.businessName || "",
+        businessLogo: user?.logoUrl ?? undefined,
       });
-
-      if (!contract || contract.userId !== ctx.user.id) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Contract not found",
-        });
-      }
-
-      const [updated] = await ctx.db
-        .update(contracts)
-        .set({
-          developerSignature: input.signature,
-          developerSignedAt: new Date(),
-        })
-        .where(eq(contracts.id, input.id))
-        .returning();
 
       return updated;
     }),
@@ -349,28 +323,16 @@ export const contractRouter = router({
       });
 
       if (!existing || existing.userId !== ctx.user.id) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Contract not found",
-        });
-      }
-
-      // Don't allow deleting signed contracts
-      if (existing.status === "signed") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Cannot delete signed contracts",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Contract not found" });
       }
 
       await ctx.db.delete(contracts).where(eq(contracts.id, input.id));
-
       return { success: true };
     }),
 
   // ============ PUBLIC ENDPOINTS ============
 
-  // Get contract by sign token (public)
+  // Get contract by sign token (for signing page)
   getByToken: publicProcedure
     .input(z.object({ token: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -383,41 +345,23 @@ export const contractRouter = router({
       });
 
       if (!contract) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Contract not found",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Contract not found" });
       }
 
       // Check if expired
-      if (contract.expiresAt && new Date(contract.expiresAt) < new Date()) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "This contract has expired",
-        });
+      if (contract.expiresAt && new Date() > contract.expiresAt) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Contract has expired" });
       }
 
-      // Check if already signed
-      if (contract.status === "signed") {
-        // Return limited info for already signed contracts
-        return {
-          id: contract.id,
-          name: contract.name,
-          status: contract.status as "signed",
-          signedAt: contract.signedAt,
-          alreadySigned: true as const,
-        };
-      }
-
-      // Mark as viewed if not already
-      if (contract.status === "sent" && !contract.viewedAt) {
+      // Mark as viewed if first time
+      if (contract.status === "sent") {
         await ctx.db
           .update(contracts)
-          .set({ viewedAt: new Date(), status: "viewed" })
+          .set({ status: "viewed", viewedAt: new Date() })
           .where(eq(contracts.id, contract.id));
       }
 
-      // Get user/business info
+      // Get business info
       const user = await ctx.db.query.users.findFirst({
         where: eq(users.id, contract.userId),
       });
@@ -427,126 +371,146 @@ export const contractRouter = router({
         name: contract.name,
         content: contract.content,
         status: contract.status,
-        expiresAt: contract.expiresAt,
-        developerSignature: contract.developerSignature,
-        developerSignedAt: contract.developerSignedAt,
         signedAt: contract.signedAt,
-        client: contract.client ? {
+        clientSignature: contract.clientSignature,
+        client: {
           name: contract.client.name,
           email: contract.client.email,
-          company: contract.client.company,
-        } : null,
-        project: contract.project ? {
-          name: contract.project.name,
-        } : null,
-        business: user ? {
-          name: user.businessName || user.name,
-          email: user.email,
-        } : null,
-        alreadySigned: false as const,
+        },
+        project: contract.project
+          ? { name: contract.project.name }
+          : null,
+        business: user
+          ? {
+              name: user.businessName || user.name,
+              email: user.email,
+              logoUrl: user.logoUrl,
+            }
+          : null,
       };
     }),
 
-  // Sign contract (public)
+  // Sign contract
   sign: publicProcedure
     .input(
       z.object({
         token: z.string(),
-        signature: z.string(), // Base64 signature image or typed name
-        signedName: z.string(),
-        signedEmail: z.string().email(),
-        agreedToTerms: z.boolean(),
+        signature: z.string().min(1),
+        signatureType: z.enum(["drawn", "typed"]),
+        clientIp: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      if (!input.agreedToTerms) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "You must agree to the terms",
-        });
-      }
-
       const contract = await ctx.db.query.contracts.findFirst({
         where: eq(contracts.signToken, input.token),
+        with: {
+          client: true,
+          project: true,
+        },
       });
 
       if (!contract) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Contract not found",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Contract not found" });
       }
 
       if (contract.status === "signed") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Contract has already been signed",
-        });
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Contract already signed" });
       }
 
-      if (contract.expiresAt && new Date(contract.expiresAt) < new Date()) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Contract has expired",
-        });
+      if (contract.status === "declined") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Contract was declined" });
       }
 
-      // Get IP and user agent from headers (would need to pass through context)
-      const clientIp = "127.0.0.1"; // TODO: Get from request
-      const clientUserAgent = "Unknown"; // TODO: Get from request
+      if (contract.expiresAt && new Date() > contract.expiresAt) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Contract has expired" });
+      }
 
+      const signedAt = new Date();
+
+      // Update contract
       const [updated] = await ctx.db
         .update(contracts)
         .set({
           status: "signed",
-          signedAt: new Date(),
           clientSignature: input.signature,
-          clientSignedName: input.signedName,
-          clientSignedEmail: input.signedEmail,
-          clientIp,
-          clientUserAgent,
+          clientIp: input.clientIp,
+          signedAt,
+          updatedAt: new Date(),
         })
         .where(eq(contracts.id, contract.id))
         .returning();
 
-      // TODO: Generate PDF
-      // TODO: Send confirmation emails to both parties
+      // Get developer info for emails
+      const user = await ctx.db.query.users.findFirst({
+        where: eq(users.id, contract.userId),
+      });
 
-      return { success: true, signedAt: updated.signedAt };
+      // Send confirmation emails
+      const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/sign/${input.token}`;
+      
+      await sendContractSignedEmails({
+        clientEmail: contract.client.email,
+        clientName: contract.client.name,
+        developerEmail: user?.email || "",
+        developerName: user?.name || "Developer",
+        contractName: contract.name,
+        projectName: contract.project?.name,
+        signedAt: formatDate(signedAt),
+        viewUrl,
+        businessName: user?.businessName || "",
+        businessLogo: user?.logoUrl ?? undefined,
+      });
+
+      return updated;
     }),
 
-  // Decline contract (public)
+  // Decline contract
   decline: publicProcedure
     .input(z.object({ token: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const contract = await ctx.db.query.contracts.findFirst({
         where: eq(contracts.signToken, input.token),
+        with: {
+          client: true,
+          project: true,
+        },
       });
 
       if (!contract) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Contract not found",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Contract not found" });
       }
 
       if (contract.status === "signed") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Contract has already been signed",
-        });
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Contract already signed" });
       }
 
-      await ctx.db
+      const [updated] = await ctx.db
         .update(contracts)
         .set({
           status: "declined",
-          declinedAt: new Date(),
+          updatedAt: new Date(),
         })
-        .where(eq(contracts.id, contract.id));
+        .where(eq(contracts.id, contract.id))
+        .returning();
 
-      // TODO: Notify developer
+      // Get developer info
+      const user = await ctx.db.query.users.findFirst({
+        where: eq(users.id, contract.userId),
+      });
 
-      return { success: true };
+      // Notify developer
+      const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/contracts/${contract.id}`;
+      
+      await sendContractDeclinedEmail({
+        developerEmail: user?.email || "",
+        developerName: user?.name || "Developer",
+        clientEmail: contract.client.email,
+        clientName: contract.client.name,
+        contractName: contract.name,
+        projectName: contract.project?.name,
+        viewUrl,
+      });
+
+      return updated;
     }),
 });

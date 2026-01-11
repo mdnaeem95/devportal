@@ -1,177 +1,147 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import Link from "next/link";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
-import { formatDate } from "@/lib/utils";
-import { Loader2, CheckCircle2, AlertCircle, FileText, Building, Calendar, PenTool, Eraser, Check } from "lucide-react";
+import { ContractPDFButton } from "@/components/pdf/pdf-download-button";
+import { Loader2, Building, CheckCircle2, FileText, PenTool, Type, X } from "lucide-react";
 
-const signatureSchema = z.object({
-  signedName: z.string().min(1, "Your name is required"),
-  signedEmail: z.string().email("Valid email is required"),
-  agreedToTerms: z.boolean().refine((val) => val === true, "You must agree to the terms"),
-});
-
-type SignatureFormData = z.infer<typeof signatureSchema>;
-
-export default function PublicSignPage({ params }: { params: { token: string } }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [hasSignature, setHasSignature] = useState(false);
-  const [signatureMode, setSignatureMode] = useState<"draw" | "type">("draw");
+export default function ContractSigningPage({
+  params,
+}: {
+  params: { token: string };
+}) {
+  const [signatureType, setSignatureType] = useState<"draw" | "type">("type");
   const [typedSignature, setTypedSignature] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isComplete, setIsComplete] = useState(false);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [isSigning, setIsSigning] = useState(false);
+  const [isDeclining, setIsDeclining] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const { data: contract, isLoading, error } = trpc.contract.getByToken.useQuery({
+  const { data: contract, isLoading, refetch } = trpc.contract.getByToken.useQuery({
     token: params.token,
   });
 
-  const signContract = trpc.contract.sign.useMutation({
+  const signMutation = trpc.contract.sign.useMutation({
     onSuccess: () => {
-      setIsComplete(true);
-      setIsSubmitting(false);
-    },
-    onError: () => {
-      setIsSubmitting(false);
+      refetch();
     },
   });
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<SignatureFormData>({
-    resolver: zodResolver(signatureSchema),
-    defaultValues: {
-      signedName: "",
-      signedEmail: "",
-      agreedToTerms: false,
+  const declineMutation = trpc.contract.decline.useMutation({
+    onSuccess: () => {
+      refetch();
     },
   });
 
-  // Initialize canvas
-  useEffect(() => {
+  // Canvas drawing functions
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Set canvas size
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * 2;
-    canvas.height = rect.height * 2;
-    ctx.scale(2, 2);
-
-    // Set drawing style
-    ctx.strokeStyle = "#000";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-  }, []);
-
-  const getCoords = (e: React.MouseEvent | React.TouchEvent) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-
-    const rect = canvas.getBoundingClientRect();
-    if ("touches" in e) {
-      return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top,
-      };
-    }
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
-  };
-
-  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!ctx) return;
-
     setIsDrawing(true);
-    const { x, y } = getCoords(e);
+    const rect = canvas.getBoundingClientRect();
     ctx.beginPath();
-    ctx.moveTo(x, y);
+    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
   };
 
-  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const { x, y } = getCoords(e);
-    ctx.lineTo(x, y);
+    const rect = canvas.getBoundingClientRect();
+    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
     ctx.stroke();
-    setHasSignature(true);
   };
 
   const stopDrawing = () => {
     setIsDrawing(false);
   };
 
-  const clearSignature = () => {
+  const clearCanvas = () => {
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!ctx || !canvas) return;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setHasSignature(false);
   };
 
-  const getSignatureData = (): string => {
-    if (signatureMode === "type") {
-      // Create an image from typed text
-      const canvas = document.createElement("canvas");
-      canvas.width = 400;
-      canvas.height = 100;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.font = "italic 32px 'Brush Script MT', cursive";
-        ctx.fillStyle = "#000";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(typedSignature, canvas.width / 2, canvas.height / 2);
+  const getSignature = (): string => {
+    if (signatureType === "type") {
+      return typedSignature;
+    }
+
+    const canvas = canvasRef.current;
+    if (!canvas) return "";
+
+    return canvas.toDataURL("image/png");
+  };
+
+  const handleSign = async () => {
+    const signature = getSignature();
+
+    if (!signature) {
+      alert("Please provide your signature");
+      return;
+    }
+
+    setIsSigning(true);
+
+    try {
+      // Get client IP (will be captured server-side more accurately)
+      let clientIp = "";
+      try {
+        const ipResponse = await fetch("https://api.ipify.org?format=json");
+        const ipData = await ipResponse.json();
+        clientIp = ipData.ip;
+      } catch {
+        // IP fetch failed, will use server-side detection
       }
-      return canvas.toDataURL("image/png");
+
+      await signMutation.mutateAsync({
+        token: params.token,
+        signature,
+        signatureType: signatureType === "draw" ? "drawn" : "typed",
+        clientIp,
+      });
+    } catch (error) {
+      console.error("Sign error:", error);
+    } finally {
+      setIsSigning(false);
     }
-    return canvasRef.current?.toDataURL("image/png") || "";
   };
 
-  const onSubmit = async (data: SignatureFormData) => {
-    const signature = getSignatureData();
-    if (signatureMode === "draw" && !hasSignature) {
-      alert("Please draw your signature");
-      return;
-    }
-    if (signatureMode === "type" && !typedSignature) {
-      alert("Please type your signature");
+  const handleDecline = async () => {
+    if (!confirm("Are you sure you want to decline this contract?")) {
       return;
     }
 
-    setIsSubmitting(true);
-    signContract.mutate({
-      token: params.token,
-      signature,
-      signedName: data.signedName,
-      signedEmail: data.signedEmail,
-      agreedToTerms: data.agreedToTerms,
-    });
+    setIsDeclining(true);
+
+    try {
+      await declineMutation.mutateAsync({ token: params.token });
+    } catch (error) {
+      console.error("Decline error:", error);
+    } finally {
+      setIsDeclining(false);
+    }
   };
 
   if (isLoading) {
@@ -182,17 +152,15 @@ export default function PublicSignPage({ params }: { params: { token: string } }
     );
   }
 
-  if (error?.data?.code === "NOT_FOUND" || !contract) {
+  if (!contract) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
-        <Card className="w-full max-w-md bg-card/50 backdrop-blur-sm">
+        <Card className="w-full max-w-md">
           <CardContent className="py-12 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary">
-              <AlertCircle className="h-7 w-7 text-muted-foreground" />
-            </div>
-            <h1 className="mt-6 text-xl font-semibold">Contract Not Found</h1>
+            <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
+            <h1 className="mt-4 text-xl font-semibold">Contract Not Found</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              This contract doesn't exist or the link may have expired.
+              This contract doesn't exist or the link has expired.
             </p>
           </CardContent>
         </Card>
@@ -200,272 +168,318 @@ export default function PublicSignPage({ params }: { params: { token: string } }
     );
   }
 
-  // Handle already signed contract
-  if (contract.alreadySigned) {
-    const signedDate = contract.signedAt ? formatDate(contract.signedAt) : null;
-    return (
-      <div className="flex min-h-screen items-center justify-center p-6">
-        <Card className="w-full max-w-md bg-card/50 backdrop-blur-sm border-green-500/30">
-          <CardContent className="py-12 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-green-500/20">
-              <CheckCircle2 className="h-7 w-7 text-green-400" />
-            </div>
-            <h1 className="mt-6 text-xl font-semibold text-green-400">Already Signed</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              This contract was signed{signedDate ? ` on ${signedDate}` : ""}.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (isComplete) {
-    return (
-      <div className="flex min-h-screen items-center justify-center p-6">
-        <Card className="w-full max-w-md bg-card/50 backdrop-blur-sm border-green-500/30">
-          <CardContent className="py-12 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-green-500/20">
-              <CheckCircle2 className="h-7 w-7 text-green-400" />
-            </div>
-            <h1 className="mt-6 text-xl font-semibold text-green-400">Contract Signed!</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Thank you for signing. You will receive a copy via email.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // At this point, contract is not alreadySigned, so it has all the fields
-  const contractData = contract;
-  const expiresDate = contractData.expiresAt ? formatDate(contractData.expiresAt) : null;
+  const isSigned = contract.status === "signed";
+  const isDeclined = contract.status === "declined";
 
   return (
     <>
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-border/50 bg-background/95 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
+      <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg gradient-primary">
-              <Building className="h-5 w-5 text-white" />
-            </div>
+            {contract.business?.logoUrl ? (
+              <img
+                src={contract.business.logoUrl}
+                alt={contract.business.name}
+                className="h-10 w-10 rounded-lg object-cover"
+              />
+            ) : (
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
+                <Building className="h-5 w-5 text-primary-foreground" />
+              </div>
+            )}
             <div>
-              <p className="font-semibold">{contractData.business?.name || "Developer"}</p>
-              <p className="text-xs text-muted-foreground">Contract Signing</p>
+              <p className="font-semibold">{contract.business?.name}</p>
+              <p className="text-xs text-muted-foreground">Contract</p>
             </div>
           </div>
-          {expiresDate && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Calendar className="h-4 w-4" />
-              Expires {expiresDate}
-            </div>
-          )}
+          <Badge
+            variant={
+              isSigned ? "default" : isDeclined ? "destructive" : "secondary"
+            }
+            className={isSigned ? "bg-green-500" : ""}
+          >
+            {contract.status}
+          </Badge>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-8">
-        <div className="grid gap-8 lg:grid-cols-3">
-          {/* Contract Content */}
-          <div className="lg:col-span-2">
-            <Card className="bg-card/50 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  {contractData.name}
-                </CardTitle>
-                {contractData.project && (
-                  <p className="text-sm text-muted-foreground">
-                    Project: {contractData.project.name}
-                  </p>
-                )}
-              </CardHeader>
-              <CardContent>
-                <div className="prose prose-invert prose-sm max-w-none max-h-[60vh] overflow-y-auto rounded-lg border border-border/50 bg-secondary/30 p-6">
-                  <pre className="whitespace-pre-wrap font-sans text-sm">{contractData.content}</pre>
+      <main className="mx-auto max-w-4xl px-6 py-8">
+        {/* Signed State */}
+        {isSigned && (
+          <Card className="mb-8 border-green-200 bg-green-50">
+            <CardContent className="py-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+                    <CheckCircle2 className="h-6 w-6 text-green-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold text-green-700">
+                      Contract Signed
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      Signed on{" "}
+                      {new Date(contract.signedAt!).toLocaleDateString("en-US", {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      })}
+                    </p>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+                <ContractPDFButton
+                  contractId={contract.id}
+                  signToken={params.token}
+                  variant="outline"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-          {/* Signature Panel */}
-          <div className="space-y-6">
-            <Card className="bg-card/50 backdrop-blur-sm sticky top-24">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <PenTool className="h-5 w-5" />
-                  Sign Contract
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                  {/* Name */}
-                  <div className="space-y-2">
-                    <Label htmlFor="signedName">Your Full Name</Label>
-                    <Input
-                      id="signedName"
-                      placeholder="John Doe"
-                      {...register("signedName")}
-                      className={errors.signedName ? "border-destructive" : ""}
-                    />
-                    {errors.signedName && (
-                      <p className="text-sm text-destructive">{errors.signedName.message}</p>
-                    )}
-                  </div>
+        {/* Declined State */}
+        {isDeclined && (
+          <Card className="mb-8 border-red-200 bg-red-50">
+            <CardContent className="py-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+                  <X className="h-6 w-6 text-red-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-red-700">
+                    Contract Declined
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    This contract has been declined.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-                  {/* Email */}
-                  <div className="space-y-2">
-                    <Label htmlFor="signedEmail">Your Email</Label>
-                    <Input
-                      id="signedEmail"
-                      type="email"
-                      placeholder="john@example.com"
-                      defaultValue={contractData.client?.email || ""}
-                      {...register("signedEmail")}
-                      className={errors.signedEmail ? "border-destructive" : ""}
-                    />
-                    {errors.signedEmail && (
-                      <p className="text-sm text-destructive">{errors.signedEmail.message}</p>
-                    )}
-                  </div>
+        {/* Contract Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold">{contract.name}</h1>
+          {contract.project && (
+            <p className="mt-2 text-muted-foreground">
+              Project: {contract.project.name}
+            </p>
+          )}
+        </div>
 
-                  {/* Signature Mode Toggle */}
-                  <div className="space-y-2">
-                    <Label>Signature</Label>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={signatureMode === "draw" ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setSignatureMode("draw")}
+        {/* Parties */}
+        <div className="mb-8 grid gap-4 sm:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-muted-foreground">
+                Developer
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="font-medium">{contract.business?.name}</p>
+              <p className="text-sm text-muted-foreground">
+                {contract.business?.email}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-muted-foreground">
+                Client
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="font-medium">{contract.client.name}</p>
+              <p className="text-sm text-muted-foreground">
+                {contract.client.email}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Contract Content */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Contract Terms</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="prose prose-sm max-w-none">
+              <div className="whitespace-pre-wrap">{contract.content}</div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Signature Section (only if not signed/declined) */}
+        {!isSigned && !isDeclined && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Sign Contract</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Signature Type Toggle */}
+              <div className="flex gap-2">
+                <Button
+                  variant={signatureType === "type" ? "default" : "outline"}
+                  onClick={() => setSignatureType("type")}
+                  className="flex-1"
+                >
+                  <Type className="mr-2 h-4 w-4" />
+                  Type Signature
+                </Button>
+                <Button
+                  variant={signatureType === "draw" ? "default" : "outline"}
+                  onClick={() => setSignatureType("draw")}
+                  className="flex-1"
+                >
+                  <PenTool className="mr-2 h-4 w-4" />
+                  Draw Signature
+                </Button>
+              </div>
+
+              {/* Type Signature */}
+              {signatureType === "type" && (
+                <div className="space-y-2">
+                  <Label htmlFor="signature">Type your full name</Label>
+                  <Input
+                    id="signature"
+                    value={typedSignature}
+                    onChange={(e) => setTypedSignature(e.target.value)}
+                    placeholder="Your full legal name"
+                    className="text-lg"
+                  />
+                  {typedSignature && (
+                    <div className="mt-4 rounded-lg border bg-secondary/50 p-4">
+                      <p className="text-sm text-muted-foreground">Preview:</p>
+                      <p
+                        className="mt-2 text-2xl"
+                        style={{ fontFamily: "cursive" }}
                       >
-                        Draw
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={signatureMode === "type" ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setSignatureMode("type")}
-                      >
-                        Type
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Signature Area */}
-                  {signatureMode === "draw" ? (
-                    <div className="space-y-2">
-                      <div className="relative rounded-lg border border-border bg-white">
-                        <canvas
-                          ref={canvasRef}
-                          className="w-full h-32 cursor-crosshair touch-none"
-                          onMouseDown={startDrawing}
-                          onMouseMove={draw}
-                          onMouseUp={stopDrawing}
-                          onMouseLeave={stopDrawing}
-                          onTouchStart={startDrawing}
-                          onTouchMove={draw}
-                          onTouchEnd={stopDrawing}
-                        />
-                        {!hasSignature && (
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <p className="text-gray-400 text-sm">Draw your signature here</p>
-                          </div>
-                        )}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={clearSignature}
-                        disabled={!hasSignature}
-                      >
-                        <Eraser className="h-4 w-4" />
-                        Clear
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Input
-                        placeholder="Type your full name"
-                        value={typedSignature}
-                        onChange={(e) => setTypedSignature(e.target.value)}
-                        className="font-signature text-xl"
-                      />
-                      {typedSignature && (
-                        <div className="rounded-lg border border-border bg-white p-4">
-                          <p
-                            className="text-2xl text-black text-center"
-                            style={{ fontFamily: "'Brush Script MT', cursive" }}
-                          >
-                            {typedSignature}
-                          </p>
-                        </div>
-                      )}
+                        {typedSignature}
+                      </p>
                     </div>
                   )}
+                </div>
+              )}
 
-                  {/* Terms Agreement */}
-                  <div className="space-y-2">
-                    <label className="flex items-start gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        {...register("agreedToTerms")}
-                        className="mt-1 h-4 w-4 rounded border-border"
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        I agree that my electronic signature is the legal equivalent of my manual
-                        signature and I have read and agree to the terms of this contract.
-                      </span>
-                    </label>
-                    {errors.agreedToTerms && (
-                      <p className="text-sm text-destructive">{errors.agreedToTerms.message}</p>
-                    )}
+              {/* Draw Signature */}
+              {signatureType === "draw" && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Draw your signature</Label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={clearCanvas}
+                    >
+                      Clear
+                    </Button>
                   </div>
+                  <div className="rounded-lg border bg-white">
+                    <canvas
+                      ref={canvasRef}
+                      width={500}
+                      height={150}
+                      className="w-full cursor-crosshair touch-none"
+                      onMouseDown={startDrawing}
+                      onMouseMove={draw}
+                      onMouseUp={stopDrawing}
+                      onMouseLeave={stopDrawing}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Use your mouse or finger to draw your signature
+                  </p>
+                </div>
+              )}
 
-                  {/* Submit */}
-                  <Button
-                    type="submit"
-                    className="w-full gradient-primary border-0 h-12"
-                    disabled={isSubmitting}
+              {/* Agreement */}
+              <div className="rounded-lg bg-secondary/50 p-4">
+                <p className="text-sm text-muted-foreground">
+                  By signing this document, I agree to the terms and conditions
+                  outlined above. I understand that this is a legally binding
+                  agreement.
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <Button
+                  variant="outline"
+                  onClick={handleDecline}
+                  disabled={isDeclining || isSigning}
+                >
+                  {isDeclining ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <X className="mr-2 h-4 w-4" />
+                  )}
+                  Decline
+                </Button>
+                <Button
+                  onClick={handleSign}
+                  disabled={
+                    isSigning ||
+                    isDeclining ||
+                    (signatureType === "type" && !typedSignature)
+                  }
+                >
+                  {isSigning ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Signing...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      Sign Contract
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Signature Display (for signed contracts) */}
+        {isSigned && contract.clientSignature && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Signature</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-lg border bg-secondary/50 p-6">
+                {contract.clientSignature.startsWith("data:image") ? (
+                  <img
+                    src={contract.clientSignature}
+                    alt="Signature"
+                    className="max-h-20"
+                  />
+                ) : (
+                  <p
+                    className="text-2xl"
+                    style={{ fontFamily: "cursive" }}
                   >
-                    {isSubmitting ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Check className="h-5 w-5" />
-                    )}
-                    {isSubmitting ? "Signing..." : "Sign Contract"}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-
-            {/* Client Info */}
-            {contractData.client && (
-              <Card className="bg-card/50 backdrop-blur-sm">
-                <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground mb-2">Contract prepared for</p>
-                  <p className="font-medium">{contractData.client.name}</p>
-                  <p className="text-sm text-muted-foreground">{contractData.client.email}</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
+                    {contract.clientSignature}
+                  </p>
+                )}
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Signed by {contract.client.name} on{" "}
+                  {new Date(contract.signedAt!).toLocaleString()}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border/50 bg-card/30 mt-12">
-        <div className="mx-auto max-w-5xl px-6 py-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-            <p>This is a legally binding contract.</p>
-            <div className="flex items-center gap-2">
-              <span>Powered by</span>
-              <Link href="/" className="font-medium text-foreground hover:text-primary transition-colors">
-                DevPortal
-              </Link>
-            </div>
+      <footer className="border-t bg-card/50 mt-12">
+        <div className="mx-auto max-w-4xl px-6 py-6">
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <p>Contract for {contract.client.name}</p>
+            <p>Powered by DevPortal</p>
           </div>
         </div>
       </footer>

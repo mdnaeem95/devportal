@@ -7,9 +7,27 @@ import { Header } from "@/components/dashboard/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DeliverablesTab } from "@/components/projects/deliverables-tab";
 import { trpc } from "@/lib/trpc";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
-import { ArrowLeft, Loader2, ExternalLink, Copy, Check, FileText, CreditCard, Package, Clock, CheckCircle2, Circle, Plus, Receipt, Send, Eye, XCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  ExternalLink,
+  Copy,
+  Check,
+  FileText,
+  CreditCard,
+  Package,
+  Clock,
+  CheckCircle2,
+  Circle,
+  Plus,
+  Receipt,
+  Send,
+  Eye,
+  XCircle,
+} from "lucide-react";
 
 type TabId = "overview" | "milestones" | "contract" | "invoices" | "deliverables";
 
@@ -55,6 +73,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   const { data: project, isLoading, refetch } = trpc.project.get.useQuery({ id: params.id });
   const { data: invoices } = trpc.invoice.list.useQuery({ projectId: params.id });
   const { data: contracts } = trpc.contract.list.useQuery({ projectId: params.id });
+  const { data: deliverables } = trpc.deliverable.list.useQuery({ projectId: params.id });
 
   const createInvoiceFromMilestone = trpc.invoice.createFromMilestone.useMutation({
     onSuccess: (invoice) => {
@@ -114,14 +133,16 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   const totalPaid =
     invoices?.filter((inv) => inv.status === "paid").reduce((sum, inv) => sum + inv.total, 0) ?? 0;
 
-  const signedContract = contracts?.find((c) => c.status === "signed");
-  const pendingContract = contracts?.find((c) => ["sent", "viewed"].includes(c.status));
+  // Cast project client for type safety
+  const projectWithRelations = project as typeof project & {
+    client: { id: string; name: string; email: string; company: string | null };
+  };
 
   return (
     <>
       <Header
         title={project.name}
-        description={project.client.name}
+        description={projectWithRelations.client.name}
         action={
           <div className="flex items-center gap-2">
             <Button variant="ghost" asChild>
@@ -167,6 +188,11 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                 {tab.id === "contract" && contracts && contracts.length > 0 && (
                   <span className="ml-1 rounded-full bg-primary/20 px-2 py-0.5 text-xs text-primary">
                     {contracts.length}
+                  </span>
+                )}
+                {tab.id === "deliverables" && deliverables && deliverables.length > 0 && (
+                  <span className="ml-1 rounded-full bg-primary/20 px-2 py-0.5 text-xs text-primary">
+                    {deliverables.length}
                   </span>
                 )}
                 {activeTab === tab.id && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
@@ -246,16 +272,16 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                 </CardHeader>
                 <CardContent>
                   <Link
-                    href={`/dashboard/clients/${project.client.id}`}
+                    href={`/dashboard/clients/${projectWithRelations.client.id}`}
                     className="flex items-center gap-4 rounded-lg border border-border/50 p-4 transition-all hover:bg-secondary/50"
                   >
                     <div className="flex h-12 w-12 items-center justify-center rounded-lg gradient-primary text-lg font-semibold text-white">
-                      {project.client.name.slice(0, 2).toUpperCase()}
+                      {projectWithRelations.client.name.slice(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <p className="font-medium">{project.client.name}</p>
+                      <p className="font-medium">{projectWithRelations.client.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {project.client.company || project.client.email}
+                        {projectWithRelations.client.company || projectWithRelations.client.email}
                       </p>
                     </div>
                   </Link>
@@ -399,7 +425,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                               <div>
                                 <p className="font-medium">{contract.name}</p>
                                 <p className="text-sm text-muted-foreground">
-                                  {contract.status === "signed"
+                                  {contract.status === "signed" && contract.signedAt
                                     ? `Signed ${formatDate(contract.signedAt)}`
                                     : `Created ${formatDate(contract.createdAt)}`}
                                 </p>
@@ -478,15 +504,10 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
 
           {activeTab === "deliverables" && (
             <div className="mx-auto max-w-4xl">
-              <Card className="bg-card/50 backdrop-blur-sm">
-                <CardContent className="py-12 text-center">
-                  <Package className="mx-auto h-12 w-12 text-muted-foreground" />
-                  <h3 className="mt-4 text-lg font-medium">Deliverables Coming Soon</h3>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Upload files and link GitHub repos for your clients.
-                  </p>
-                </CardContent>
-              </Card>
+              <DeliverablesTab
+                projectId={project.id}
+                milestones={project.milestones?.map((m) => ({ id: m.id, name: m.name })) ?? []}
+              />
             </div>
           )}
         </div>
