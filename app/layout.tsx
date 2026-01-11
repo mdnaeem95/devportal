@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { TRPCProvider } from "@/lib/providers";
 import "./globals.css";
+import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: {
@@ -29,6 +30,7 @@ export default function RootLayout({
       <html lang="en" suppressHydrationWarning>
         <body className="min-h-screen antialiased">
           <TRPCProvider>{children}</TRPCProvider>
+          <Toaster />
         </body>
       </html>
     </ClerkProvider>

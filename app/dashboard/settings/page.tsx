@@ -1,14 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
+import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/dashboard/header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { Loader2, User, Building, CreditCard, Bell, Upload, ChevronDown } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+import { Loader2, User, Building, CreditCard, Bell, Upload, ChevronDown, Check, AlertCircle, ExternalLink,
+  X, ImageIcon } from "lucide-react";
 
 type TabId = "profile" | "business" | "billing" | "notifications";
 
@@ -30,35 +34,239 @@ const currencies = [
 
 export default function SettingsPage() {
   const { user, isLoaded } = useUser();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabId>("profile");
-  const [isSaving, setIsSaving] = useState(false);
+  
+  // Check for Stripe redirect params
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    const stripeStatus = searchParams.get("stripe");
+    
+    if (tab === "payments") {
+      setActiveTab("billing");
+    }
+    
+    if (stripeStatus === "success") {
+      toast.success("Stripe account connected successfully!");
+      // Clean up URL
+      window.history.replaceState({}, "", "/dashboard/settings?tab=payments");
+    } else if (stripeStatus === "refresh") {
+      toast.info("Please complete your Stripe onboarding");
+    }
+  }, [searchParams]);
+
+  // Fetch settings
+  const { data: settings, isLoading: settingsLoading, refetch: refetchSettings } = trpc.settings.get.useQuery();
+  
+  // Fetch Stripe status
+  const { data: stripeStatus, isLoading: stripeLoading, refetch: refetchStripe } = trpc.stripe.getStatus.useQuery();
 
   // Form states
   const [businessName, setBusinessName] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
   const [taxId, setTaxId] = useState("");
   const [currency, setCurrency] = useState("USD");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Notification preferences
   const [emailInvoicePaid, setEmailInvoicePaid] = useState(true);
   const [emailContractSigned, setEmailContractSigned] = useState(true);
   const [emailWeeklyDigest, setEmailWeeklyDigest] = useState(false);
 
-  const handleSaveProfile = async () => {
-    setIsSaving(true);
-    // TODO: Save to database via tRPC
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setIsSaving(false);
-  };
+  // Populate form when settings load
+  useEffect(() => {
+    if (settings) {
+      setBusinessName(settings.businessName || "");
+      setBusinessAddress(settings.businessAddress || "");
+      setTaxId(settings.taxId || "");
+      setCurrency(settings.currency || "USD");
+      setLogoUrl(settings.logoUrl || null);
+      setEmailInvoicePaid(settings.notifications.emailInvoicePaid);
+      setEmailContractSigned(settings.notifications.emailContractSigned);
+      setEmailWeeklyDigest(settings.notifications.emailWeeklyDigest);
+    }
+  }, [settings]);
+
+  // Mutations
+  const updateSettings = trpc.settings.update.useMutation({
+    onSuccess: () => {
+      toast.success("Business settings saved");
+      refetchSettings();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to save settings");
+    },
+  });
+
+  const updateLogo = trpc.settings.updateLogo.useMutation({
+    onSuccess: () => {
+      toast.success("Logo updated");
+      refetchSettings();
+      setLogoFile(null);
+      setLogoPreview(null);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to update logo");
+    },
+  });
+
+  const getLogoUploadUrl = trpc.settings.getLogoUploadUrl.useMutation();
+
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+
+  const updateNotifications = trpc.settings.updateNotifications.useMutation({
+    onSuccess: () => {
+      toast.success("Notification preferences saved");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to save preferences");
+    },
+  });
+
+  const getOnboardingLink = trpc.stripe.getOnboardingLink.useMutation({
+    onSuccess: (data) => {
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to start Stripe onboarding");
+    },
+  });
+
+  const getDashboardLink = trpc.stripe.getDashboardLink.useMutation({
+    onSuccess: (data) => {
+      if (data.url) {
+        window.open(data.url, "_blank");
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to open Stripe dashboard");
+    },
+  });
+
+  const disconnectStripe = trpc.stripe.disconnect.useMutation({
+    onSuccess: () => {
+      toast.success("Stripe disconnected");
+      refetchStripe();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to disconnect Stripe");
+    },
+  });
 
   const handleSaveBusiness = async () => {
-    setIsSaving(true);
-    // TODO: Save to database via tRPC
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setIsSaving(false);
+    updateSettings.mutate({
+      businessName: businessName || null,
+      businessAddress: businessAddress || null,
+      taxId: taxId || null,
+      currency: currency as "USD" | "EUR" | "GBP" | "SGD" | "AUD" | "CAD",
+    });
   };
 
-  if (!isLoaded) {
+  const handleSaveNotifications = async () => {
+    updateNotifications.mutate({
+      emailInvoicePaid,
+      emailContractSigned,
+      emailWeeklyDigest,
+    });
+  };
+
+  const handleLogoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Image must be less than 2MB");
+      return;
+    }
+
+    setLogoFile(file);
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setLogoPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleLogoUpload = async () => {
+    if (!logoFile) return;
+
+    setIsUploadingLogo(true);
+
+    try {
+      // 1. Get presigned URL from server
+      const { uploadUrl, fileUrl } = await getLogoUploadUrl.mutateAsync({
+        fileName: logoFile.name,
+        contentType: logoFile.type,
+      });
+
+      // 2. Upload directly to R2/S3
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "PUT",
+        body: logoFile,
+        headers: {
+          "Content-Type": logoFile.type,
+        },
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to upload file");
+      }
+
+      // 3. Update logo URL in database
+      await updateLogo.mutateAsync({ logoUrl: fileUrl });
+    } catch (error) {
+      console.error("[Settings] Logo upload error:", error);
+      toast.error("Failed to upload logo");
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    setLogoFile(null);
+    setLogoPreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    // Only call the mutation if there's an existing logo in the database
+    if (logoUrl) {
+      try {
+        await updateLogo.mutateAsync({ logoUrl: null });
+      } catch (error) {
+        toast.error("Failed to remove logo");
+      }
+    }
+  };
+
+  const handleConnectStripe = () => {
+    getOnboardingLink.mutate();
+  };
+
+  const handleOpenStripeDashboard = () => {
+    getDashboardLink.mutate();
+  };
+
+  const handleDisconnectStripe = () => {
+    if (confirm("Are you sure you want to disconnect Stripe? You won't be able to accept payments until you reconnect.")) {
+      disconnectStripe.mutate();
+    }
+  };
+
+  if (!isLoaded || settingsLoading) {
     return (
       <>
         <Header title="Settings" />
@@ -68,6 +276,8 @@ export default function SettingsPage() {
       </>
     );
   }
+
+  const displayLogo = logoPreview || logoUrl;
 
   return (
     <>
@@ -168,14 +378,63 @@ export default function SettingsPage() {
                     <div className="space-y-2">
                       <Label>Business Logo</Label>
                       <div className="flex items-center gap-4">
-                        <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-border bg-secondary/30">
-                          <Building className="h-6 w-6 text-muted-foreground" />
+                        <div className="relative">
+                          {displayLogo ? (
+                            <div className="relative">
+                              <img
+                                src={displayLogo}
+                                alt="Business logo"
+                                className="h-16 w-16 rounded-lg object-cover border border-border/50"
+                              />
+                              <button
+                                onClick={handleRemoveLogo}
+                                className="absolute -top-2 -right-2 p-1 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-border bg-secondary/30">
+                              <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                            </div>
+                          )}
                         </div>
-                        <Button variant="outline" size="sm">
-                          <Upload className="h-4 w-4" />
-                          Upload Logo
-                        </Button>
+                        <div className="flex flex-col gap-2">
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleLogoSelect}
+                            className="hidden"
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            <Upload className="h-4 w-4" />
+                            {displayLogo ? "Change Logo" : "Upload Logo"}
+                          </Button>
+                          {logoFile && (
+                            <Button
+                              size="sm"
+                              onClick={handleLogoUpload}
+                              disabled={isUploadingLogo}
+                              className="gradient-primary border-0"
+                            >
+                              {isUploadingLogo ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Check className="h-4 w-4" />
+                              )}
+                              {isUploadingLogo ? "Uploading..." : "Save Logo"}
+                            </Button>
+                          )}
+                        </div>
                       </div>
+                      <p className="text-xs text-muted-foreground">
+                        Recommended: Square image, at least 200x200px, max 2MB
+                      </p>
                     </div>
 
                     {/* Business Name */}
@@ -194,7 +453,7 @@ export default function SettingsPage() {
                       <Label htmlFor="businessAddress">Business Address</Label>
                       <textarea
                         id="businessAddress"
-                        placeholder="123 Main St&#10;City, State 12345&#10;Country"
+                        placeholder={"123 Main St\nCity, State 12345\nCountry"}
                         value={businessAddress}
                         onChange={(e) => setBusinessAddress(e.target.value)}
                         rows={3}
@@ -236,11 +495,11 @@ export default function SettingsPage() {
                     <div className="pt-4 flex justify-end">
                       <Button
                         onClick={handleSaveBusiness}
-                        disabled={isSaving}
+                        disabled={updateSettings.isPending}
                         className="gradient-primary border-0"
                       >
-                        {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                        {isSaving ? "Saving..." : "Save Changes"}
+                        {updateSettings.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {updateSettings.isPending ? "Saving..." : "Save Changes"}
                       </Button>
                     </div>
                   </CardContent>
@@ -255,7 +514,7 @@ export default function SettingsPage() {
                   <CardHeader>
                     <CardTitle>Payment Settings</CardTitle>
                     <CardDescription>
-                      Connect your payment provider to accept payments.
+                      Connect your payment provider to accept payments from clients.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -270,15 +529,92 @@ export default function SettingsPage() {
                           </div>
                           <div>
                             <p className="font-medium">Stripe</p>
-                            <p className="text-sm text-muted-foreground">
-                              Accept card payments from clients
-                            </p>
+                            {stripeLoading ? (
+                              <p className="text-sm text-muted-foreground">
+                                Checking status...
+                              </p>
+                            ) : stripeStatus?.connected ? (
+                              <p className="text-sm text-green-600 flex items-center gap-1">
+                                <Check className="h-3 w-3" />
+                                Connected and ready to accept payments
+                              </p>
+                            ) : stripeStatus?.accountId && !stripeStatus?.detailsSubmitted ? (
+                              <p className="text-sm text-amber-600 flex items-center gap-1">
+                                <AlertCircle className="h-3 w-3" />
+                                Onboarding incomplete
+                              </p>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">
+                                Accept card payments from clients
+                              </p>
+                            )}
                           </div>
                         </div>
-                        <Button variant="outline">
-                          Connect Stripe
-                        </Button>
+                        <div className="flex flex-col gap-2">
+                          {stripeStatus?.connected ? (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleOpenStripeDashboard}
+                                disabled={getDashboardLink.isPending}
+                              >
+                                {getDashboardLink.isPending ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <ExternalLink className="h-4 w-4" />
+                                )}
+                                Dashboard
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleDisconnectStripe}
+                                disabled={disconnectStripe.isPending}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                Disconnect
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              onClick={handleConnectStripe}
+                              disabled={getOnboardingLink.isPending}
+                            >
+                              {getOnboardingLink.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : stripeStatus?.accountId ? (
+                                "Continue Setup"
+                              ) : (
+                                "Connect Stripe"
+                              )}
+                            </Button>
+                          )}
+                        </div>
                       </div>
+                      
+                      {/* Show requirements if incomplete */}
+                      {stripeStatus?.accountId && !stripeStatus?.connected && stripeStatus?.requirements?.currently_due && stripeStatus.requirements.currently_due.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-border/50">
+                          <p className="text-sm text-muted-foreground mb-2">
+                            Complete these items to start accepting payments:
+                          </p>
+                          <ul className="text-sm text-muted-foreground space-y-1">
+                            {stripeStatus.requirements.currently_due.slice(0, 3).map((req: string) => (
+                              <li key={req} className="flex items-center gap-2">
+                                <AlertCircle className="h-3 w-3 text-amber-500" />
+                                {req.replace(/_/g, " ").replace(/\./g, " → ")}
+                              </li>
+                            ))}
+                            {stripeStatus.requirements.currently_due.length > 3 && (
+                              <li className="text-muted-foreground">
+                                +{stripeStatus.requirements.currently_due.length - 3} more
+                              </li>
+                            )}
+                          </ul>
+                        </div>
+                      )}
                     </div>
 
                     {/* PayPal (coming soon) */}
@@ -393,8 +729,13 @@ export default function SettingsPage() {
                     ))}
 
                     <div className="pt-4 flex justify-end">
-                      <Button className="gradient-primary border-0">
-                        Save Preferences
+                      <Button
+                        onClick={handleSaveNotifications}
+                        disabled={updateNotifications.isPending}
+                        className="gradient-primary border-0"
+                      >
+                        {updateNotifications.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {updateNotifications.isPending ? "Saving..." : "Save Preferences"}
                       </Button>
                     </div>
                   </CardContent>

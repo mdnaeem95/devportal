@@ -7,6 +7,7 @@ import { templateRouter } from "./template";
 import { contractRouter } from "./contract";
 import { deliverableRouter } from "./deliverable";
 import { stripeRouter } from "./stripe";
+import { settingsRouter } from "./settings";
 
 export const appRouter = router({
   client: clientRouter,
@@ -17,6 +18,7 @@ export const appRouter = router({
   contract: contractRouter,
   deliverable: deliverableRouter,
   stripe: stripeRouter,
+  settings: settingsRouter,
 });
 
 export type AppRouter = typeof appRouter;

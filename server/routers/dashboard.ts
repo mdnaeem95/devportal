@@ -1,11 +1,17 @@
 import { router, protectedProcedure } from "../trpc";
 import { projects, clients, invoices, milestones } from "../db/schema";
-import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
+import { eq, and, desc, sql, gte, lte, lt } from "drizzle-orm";
 
 export const dashboardRouter = router({
   // Get dashboard stats
   stats: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.user.id;
+
+    // Date calculations
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
 
     // Active projects count
     const activeProjects = await ctx.db
@@ -36,10 +42,6 @@ export const dashboardRouter = router({
       );
 
     // Paid this month
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-
     const paidThisMonth = await ctx.db
       .select({
         total: sql<number>`coalesce(sum(paid_amount), 0)`,
@@ -53,6 +55,56 @@ export const dashboardRouter = router({
         )
       );
 
+    // Paid last month (for growth calculation)
+    const paidLastMonth = await ctx.db
+      .select({
+        total: sql<number>`coalesce(sum(paid_amount), 0)`,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.userId, userId),
+          eq(invoices.status, "paid"),
+          gte(invoices.paidAt, startOfLastMonth),
+          lte(invoices.paidAt, endOfLastMonth)
+        )
+      );
+
+    // Projects created this month vs last month (for growth)
+    const projectsThisMonth = await ctx.db
+      .select({ count: sql<number>`count(*)` })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.userId, userId),
+          gte(projects.createdAt, startOfMonth)
+        )
+      );
+
+    const projectsLastMonth = await ctx.db
+      .select({ count: sql<number>`count(*)` })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.userId, userId),
+          gte(projects.createdAt, startOfLastMonth),
+          lte(projects.createdAt, endOfLastMonth)
+        )
+      );
+
+    // Calculate growth percentages
+    const thisMonthRevenue = Number(paidThisMonth[0]?.total ?? 0);
+    const lastMonthRevenue = Number(paidLastMonth[0]?.total ?? 0);
+    const revenueGrowth = lastMonthRevenue > 0
+      ? Math.round(((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100)
+      : thisMonthRevenue > 0 ? 100 : 0;
+
+    const thisMonthProjects = Number(projectsThisMonth[0]?.count ?? 0);
+    const lastMonthProjects = Number(projectsLastMonth[0]?.count ?? 0);
+    const projectGrowth = lastMonthProjects > 0
+      ? Math.round(((thisMonthProjects - lastMonthProjects) / lastMonthProjects) * 100)
+      : thisMonthProjects > 0 ? 100 : 0;
+
     return {
       activeProjects: Number(activeProjects[0]?.count ?? 0),
       totalClients: Number(totalClients[0]?.count ?? 0),
@@ -60,7 +112,10 @@ export const dashboardRouter = router({
         count: Number(outstandingInvoices[0]?.count ?? 0),
         total: Number(outstandingInvoices[0]?.total ?? 0),
       },
-      paidThisMonth: Number(paidThisMonth[0]?.total ?? 0),
+      paidThisMonth: thisMonthRevenue,
+      // Growth metrics (positive = growth, negative = decline, 0 = no change)
+      revenueGrowth,
+      projectGrowth,
     };
   }),
 

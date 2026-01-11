@@ -1,16 +1,6 @@
 import { sendEmail } from "./email";
-import {
-  ContractSentEmail,
-  ContractSignedClientEmail,
-  ContractSignedDeveloperEmail,
-  ContractDeclinedEmail,
-} from "./emails/contract-emails";
-import {
-  InvoiceSentEmail,
-  InvoicePaidClientEmail,
-  InvoicePaidDeveloperEmail,
-  PaymentReminderEmail,
-} from "./emails/invoice-emails";
+import { ContractSentEmail, ContractSignedClientEmail, ContractSignedDeveloperEmail, ContractDeclinedEmail } from "./contract-emails";
+import { InvoiceSentEmail, InvoicePaidClientEmail, InvoicePaidDeveloperEmail, PaymentReminderEmail } from "./invoice-emails";
 
 // ============================================
 // Contract Emails
