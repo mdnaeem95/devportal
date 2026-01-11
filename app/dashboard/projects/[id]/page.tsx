@@ -6,27 +6,10 @@ import Link from "next/link";
 import { Header } from "@/components/dashboard/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
-import {
-  ArrowLeft,
-  Loader2,
-  ExternalLink,
-  Copy,
-  Check,
-  MoreHorizontal,
-  FileText,
-  CreditCard,
-  Package,
-  Settings,
-  Clock,
-  CheckCircle2,
-  Circle,
-  AlertCircle,
-  Plus,
-  Receipt,
-} from "lucide-react";
+import { ArrowLeft, Loader2, ExternalLink, Copy, Check, FileText, CreditCard, Package, Clock, CheckCircle2, Circle, Plus, Receipt, Send, Eye, XCircle } from "lucide-react";
 
 type TabId = "overview" | "milestones" | "contract" | "invoices" | "deliverables";
 
@@ -54,6 +37,15 @@ const milestoneStatusConfig = {
   paid: { label: "Paid", icon: Check, color: "text-success", canInvoice: false },
 };
 
+const contractStatusConfig = {
+  draft: { label: "Draft", variant: "secondary" as const, icon: FileText },
+  sent: { label: "Sent", variant: "default" as const, icon: Send },
+  viewed: { label: "Viewed", variant: "default" as const, icon: Eye },
+  signed: { label: "Signed", variant: "success" as const, icon: CheckCircle2 },
+  declined: { label: "Declined", variant: "destructive" as const, icon: XCircle },
+  expired: { label: "Expired", variant: "secondary" as const, icon: Clock },
+};
+
 export default function ProjectDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -62,10 +54,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
 
   const { data: project, isLoading, refetch } = trpc.project.get.useQuery({ id: params.id });
   const { data: invoices } = trpc.invoice.list.useQuery({ projectId: params.id });
-
-  const updateMilestone = trpc.project.update.useMutation({
-    onSuccess: () => refetch(),
-  });
+  const { data: contracts } = trpc.contract.list.useQuery({ projectId: params.id });
 
   const createInvoiceFromMilestone = trpc.invoice.createFromMilestone.useMutation({
     onSuccess: (invoice) => {
@@ -116,14 +105,17 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   }
 
   const status = statusConfig[project.status];
-  const completedMilestones = project.milestones?.filter((m) => 
-    ["completed", "invoiced", "paid"].includes(m.status)
-  ).length ?? 0;
+  const completedMilestones =
+    project.milestones?.filter((m) => ["completed", "invoiced", "paid"].includes(m.status)).length ?? 0;
   const totalMilestones = project.milestones?.length ?? 0;
   const progress = totalMilestones > 0 ? (completedMilestones / totalMilestones) * 100 : 0;
 
   const totalInvoiced = invoices?.reduce((sum, inv) => sum + inv.total, 0) ?? 0;
-  const totalPaid = invoices?.filter(inv => inv.status === "paid").reduce((sum, inv) => sum + inv.total, 0) ?? 0;
+  const totalPaid =
+    invoices?.filter((inv) => inv.status === "paid").reduce((sum, inv) => sum + inv.total, 0) ?? 0;
+
+  const signedContract = contracts?.find((c) => c.status === "signed");
+  const pendingContract = contracts?.find((c) => ["sent", "viewed"].includes(c.status));
 
   return (
     <>
@@ -139,11 +131,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
               </Link>
             </Button>
             <Button variant="outline" onClick={copyPublicLink}>
-              {copied ? (
-                <Check className="h-4 w-4 text-success" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
+              {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               {copied ? "Copied!" : "Share Link"}
             </Button>
             <Button variant="outline" asChild>
@@ -166,9 +154,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
                   "flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative",
-                  activeTab === tab.id
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
+                  activeTab === tab.id ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <tab.icon className="h-4 w-4" />
@@ -178,9 +164,12 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                     {invoices.length}
                   </span>
                 )}
-                {activeTab === tab.id && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+                {tab.id === "contract" && contracts && contracts.length > 0 && (
+                  <span className="ml-1 rounded-full bg-primary/20 px-2 py-0.5 text-xs text-primary">
+                    {contracts.length}
+                  </span>
                 )}
+                {activeTab === tab.id && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
               </button>
             ))}
           </nav>
@@ -211,17 +200,13 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                 <Card className="bg-card/50 backdrop-blur-sm">
                   <CardContent className="p-4">
                     <p className="text-sm text-muted-foreground">Invoiced</p>
-                    <p className="mt-1 text-xl font-bold">
-                      {formatCurrency(totalInvoiced)}
-                    </p>
+                    <p className="mt-1 text-xl font-bold">{formatCurrency(totalInvoiced)}</p>
                   </CardContent>
                 </Card>
                 <Card className="bg-card/50 backdrop-blur-sm">
                   <CardContent className="p-4">
                     <p className="text-sm text-muted-foreground">Collected</p>
-                    <p className="mt-1 text-xl font-bold text-success">
-                      {formatCurrency(totalPaid)}
-                    </p>
+                    <p className="mt-1 text-xl font-bold text-success">{formatCurrency(totalPaid)}</p>
                   </CardContent>
                 </Card>
               </div>
@@ -249,9 +234,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                     <CardTitle className="text-base">Description</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                      {project.description}
-                    </p>
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">{project.description}</p>
                   </CardContent>
                 </Card>
               )}
@@ -300,14 +283,11 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {project.milestones?.map((milestone, index) => {
+                      {project.milestones?.map((milestone) => {
                         const msStatus = milestoneStatusConfig[milestone.status];
                         const MsIcon = msStatus.icon;
                         return (
-                          <div
-                            key={milestone.id}
-                            className="flex items-start gap-4 rounded-lg border border-border/50 p-4"
-                          >
+                          <div key={milestone.id} className="flex items-start gap-4 rounded-lg border border-border/50 p-4">
                             <div className={cn("mt-0.5", msStatus.color)}>
                               <MsIcon className="h-5 w-5" />
                             </div>
@@ -316,19 +296,13 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                                 <div>
                                   <p className="font-medium">{milestone.name}</p>
                                   {milestone.description && (
-                                    <p className="mt-1 text-sm text-muted-foreground">
-                                      {milestone.description}
-                                    </p>
+                                    <p className="mt-1 text-sm text-muted-foreground">{milestone.description}</p>
                                   )}
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <p className="font-semibold">
-                                    {formatCurrency(milestone.amount)}
-                                  </p>
+                                  <p className="font-semibold">{formatCurrency(milestone.amount)}</p>
                                   {milestone.dueDate && (
-                                    <p className="text-xs text-muted-foreground">
-                                      Due {formatDate(milestone.dueDate)}
-                                    </p>
+                                    <p className="text-xs text-muted-foreground">Due {formatDate(milestone.dueDate)}</p>
                                   )}
                                 </div>
                               </div>
@@ -355,6 +329,84 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                               </div>
                             </div>
                           </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {activeTab === "contract" && (
+            <div className="mx-auto max-w-4xl">
+              <Card className="bg-card/50 backdrop-blur-sm">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">Contracts</CardTitle>
+                    <Button size="sm" asChild>
+                      <Link href={`/dashboard/contracts/new?project=${project.id}&client=${project.clientId}`}>
+                        <Plus className="h-4 w-4" />
+                        New Contract
+                      </Link>
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {!contracts || contracts.length === 0 ? (
+                    <div className="py-8 text-center">
+                      <FileText className="mx-auto h-8 w-8 text-muted-foreground" />
+                      <p className="mt-2 text-sm text-muted-foreground">No contracts yet</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Create a contract to protect your work with legal agreements
+                      </p>
+                      <Button variant="outline" className="mt-4" asChild>
+                        <Link href={`/dashboard/contracts/new?project=${project.id}&client=${project.clientId}`}>
+                          <Plus className="h-4 w-4" />
+                          Create Contract
+                        </Link>
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {contracts.map((contract) => {
+                        const cStatus = contractStatusConfig[contract.status];
+                        const CIcon = cStatus.icon;
+                        return (
+                          <Link
+                            key={contract.id}
+                            href={`/dashboard/contracts/${contract.id}`}
+                            className="flex items-center justify-between rounded-lg border border-border/50 p-4 transition-all hover:bg-secondary/50"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={cn(
+                                  "flex h-10 w-10 items-center justify-center rounded-lg",
+                                  contract.status === "signed" ? "bg-green-500/20" : "bg-secondary"
+                                )}
+                              >
+                                <CIcon
+                                  className={cn(
+                                    "h-5 w-5",
+                                    contract.status === "signed"
+                                      ? "text-green-400"
+                                      : contract.status === "declined"
+                                      ? "text-red-400"
+                                      : "text-muted-foreground"
+                                  )}
+                                />
+                              </div>
+                              <div>
+                                <p className="font-medium">{contract.name}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  {contract.status === "signed"
+                                    ? `Signed ${formatDate(contract.signedAt)}`
+                                    : `Created ${formatDate(contract.createdAt)}`}
+                                </p>
+                              </div>
+                            </div>
+                            <Badge variant={cStatus.variant}>{cStatus.label}</Badge>
+                          </Link>
                         );
                       })}
                     </div>
@@ -397,21 +449,16 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                         >
                           <div>
                             <p className="font-mono font-medium">{invoice.invoiceNumber}</p>
-                            <p className="text-sm text-muted-foreground">
-                              Due {formatDate(invoice.dueDate)}
-                            </p>
+                            <p className="text-sm text-muted-foreground">Due {formatDate(invoice.dueDate)}</p>
                           </div>
                           <div className="text-right">
-                            <p className={cn(
-                              "font-semibold",
-                              invoice.status === "paid" && "text-success"
-                            )}>
+                            <p className={cn("font-semibold", invoice.status === "paid" && "text-success")}>
                               {formatCurrency(invoice.total, invoice.currency ?? "USD")}
                             </p>
-                            <Badge 
+                            <Badge
                               variant={
-                                invoice.status === "paid" 
-                                  ? "success" 
+                                invoice.status === "paid"
+                                  ? "success"
                                   : invoice.status === "sent" || invoice.status === "viewed"
                                   ? "default"
                                   : "secondary"
@@ -424,20 +471,6 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                       ))}
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {activeTab === "contract" && (
-            <div className="mx-auto max-w-4xl">
-              <Card className="bg-card/50 backdrop-blur-sm">
-                <CardContent className="py-12 text-center">
-                  <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
-                  <h3 className="mt-4 text-lg font-medium">Contracts Coming Soon</h3>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Create and manage dev-specific contracts with e-signatures.
-                  </p>
                 </CardContent>
               </Card>
             </div>
