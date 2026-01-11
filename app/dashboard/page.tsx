@@ -6,15 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { formatCurrency, formatDate, formatRelativeTime } from "@/lib/utils";
-import {
-  FolderKanban,
-  Users,
-  FileText,
-  TrendingUp,
-  Plus,
-  ArrowRight,
-  ArrowUpRight,
-} from "lucide-react";
+import { FolderKanban, Users, FileText, TrendingUp, Plus, ArrowRight, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 
 export default function DashboardPage() {
@@ -30,7 +22,7 @@ export default function DashboardPage() {
         description="Welcome back! Here's your overview."
         action={
           <Button className="gradient-primary border-0" asChild>
-            <Link href="/dashboard/projects/new">
+            <Link href="/projects/new">
               <Plus className="h-4 w-4" />
               New Project
             </Link>
@@ -128,7 +120,7 @@ export default function DashboardPage() {
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-base font-medium">Recent Projects</CardTitle>
               <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
-                <Link href="/dashboard/projects">
+                <Link href="/projects">
                   View all
                   <ArrowRight className="ml-1 h-4 w-4" />
                 </Link>
@@ -142,7 +134,7 @@ export default function DashboardPage() {
                   </div>
                   <p className="mt-4 text-sm text-muted-foreground">No projects yet</p>
                   <Button variant="link" size="sm" asChild className="mt-2">
-                    <Link href="/dashboard/projects/new">Create your first project</Link>
+                    <Link href="/projects/new">Create your first project</Link>
                   </Button>
                 </div>
               ) : (
@@ -150,7 +142,7 @@ export default function DashboardPage() {
                   {recentProjects?.map((project) => (
                     <Link
                       key={project.id}
-                      href={`/dashboard/projects/${project.id}`}
+                      href={`/projects/${project.id}`}
                       className="flex items-center justify-between rounded-lg border border-border/50 p-4 transition-all hover:bg-secondary/50 hover:border-border"
                     >
                       <div className="min-w-0 flex-1">

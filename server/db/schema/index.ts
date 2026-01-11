@@ -6,3 +6,4 @@ export * from "./milestones";
 export * from "./invoices";
 export * from "./contracts";
 export * from "./deliverables";
+export * from "./templates";

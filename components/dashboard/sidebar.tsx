@@ -2,15 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  FolderKanban,
-  Users,
-  FileText,
-  Settings,
-  FileCode,
-  ChevronsLeft,
-} from "lucide-react";
+import { LayoutDashboard, FolderKanban, Users, FileText, Settings, FileCode } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -19,11 +11,11 @@ const navigation = [
   { name: "Clients", href: "/dashboard/clients", icon: Users },
   { name: "Invoices", href: "/dashboard/invoices", icon: FileText },
   { name: "Templates", href: "/dashboard/templates", icon: FileCode },
-];
+] as const;
 
 const secondaryNavigation = [
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
-];
+] as const;
 
 export function Sidebar() {
   const pathname = usePathname();
