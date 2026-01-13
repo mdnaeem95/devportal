@@ -7,10 +7,11 @@ import { generateInvoicePDF, generateInvoiceFilename } from "@/lib/pdf";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { userId: clerkId } = await auth();
+    const { id } = await params;
 
     // Check if it's an authenticated request or a public token request
     const searchParams = request.nextUrl.searchParams;
@@ -53,7 +54,7 @@ export async function GET(
       }
 
       invoice = await db.query.invoices.findFirst({
-        where: eq(invoices.id, params.id),
+        where: eq(invoices.id, id),
         with: {
           client: true,
           project: true,
