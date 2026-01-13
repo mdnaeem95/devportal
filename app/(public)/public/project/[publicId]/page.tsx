@@ -10,6 +10,7 @@ import { trpc } from "@/lib/trpc";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { Loader2, Building, CheckCircle2, Circle, Clock, FileText, CreditCard, Package, Lock, ExternalLink,
   Download, File, FileCode, FileImage, FileArchive, FileJson, Figma, Github } from "lucide-react";
+import { useParams } from "next/navigation";
 
 type TabId = "overview" | "milestones" | "files" | "invoices";
 
@@ -46,19 +47,20 @@ const categoryIcons: Record<string, React.ElementType> = {
   other: File,
 };
 
-export default function PublicProjectPage({ params }: { params: { publicId: string } }) {
+export default function PublicProjectPage() {
+  const { publicId } = useParams<{ publicId: string }>();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [password, setPassword] = useState("");
   const [passwordSubmitted, setPasswordSubmitted] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const { data: project, isLoading, error, refetch } = trpc.project.getPublic.useQuery({
-    publicId: params.publicId,
+    publicId: publicId,
     password: passwordSubmitted ? password : undefined,
   });
 
   const { data: deliverables } = trpc.deliverable.listPublic.useQuery(
-    { projectPublicId: params.publicId },
+    { projectPublicId: publicId },
     { enabled: !!project && !project.isLocked }
   );
 
