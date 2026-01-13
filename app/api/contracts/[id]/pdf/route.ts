@@ -10,6 +10,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const { id } = await params;
     const { userId: clerkId } = await auth();
 
     // Check if it's an authenticated request or a public token request
@@ -61,7 +62,7 @@ export async function GET(
       }
 
       contract = await db.query.contracts.findFirst({
-        where: eq(contracts.id, params.id),
+        where: eq(contracts.id, id),
         with: {
           client: true,
           project: true,
