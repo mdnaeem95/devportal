@@ -73,7 +73,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     undefined,
     { enabled: open && query.length > 0 }
   );
-  const { data: clients, isLoading: clientsLoading } = trpc.client.list.useQuery(
+  const { data: clients, isLoading: clientsLoading } = trpc.clients.list.useQuery(
     undefined,
     { enabled: open && query.length > 0 }
   );
