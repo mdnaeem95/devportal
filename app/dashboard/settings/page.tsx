@@ -645,7 +645,7 @@ export default function SettingsPage() {
                   <CardHeader>
                     <CardTitle>Subscription</CardTitle>
                     <CardDescription>
-                      Manage your DevPortal subscription.
+                      Manage your Zoho subscription.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>

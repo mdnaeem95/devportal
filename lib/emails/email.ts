@@ -4,7 +4,7 @@ import { Resend } from "resend";
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Default from address - update with your verified domain
-const DEFAULT_FROM = process.env.EMAIL_FROM || "DevPortal <noreply@devportal.app>";
+const DEFAULT_FROM = process.env.EMAIL_FROM || "Zoho <hello@zoho.dev>";
 
 interface SendEmailOptions {
   to: string | string[];

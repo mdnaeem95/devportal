@@ -10,7 +10,7 @@ interface EmailLayoutProps {
 
 export function EmailLayout({
   preview,
-  businessName = "DevPortal",
+  businessName = "Zoho",
   businessLogo,
   children,
 }: EmailLayoutProps) {
@@ -43,8 +43,8 @@ export function EmailLayout({
           <Section style={footer}>
             <Text style={footerText}>
               Sent via{" "}
-              <Link href="https://devportal.app" style={footerLink}>
-                DevPortal
+              <Link href="https://zoho.dev" style={footerLink}>
+                Zoho
               </Link>
               {" · "}The professional backend for freelance developers
             </Text>
