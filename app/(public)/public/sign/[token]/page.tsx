@@ -9,12 +9,10 @@ import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { ContractPDFButton } from "@/components/pdf/pdf-download-button";
 import { Loader2, Building, CheckCircle2, FileText, PenTool, Type, X } from "lucide-react";
+import { useParams } from "next/navigation";
 
-export default function ContractSigningPage({
-  params,
-}: {
-  params: { token: string };
-}) {
+export default function ContractSigningPage() {
+  const { token } = useParams<{ token: string }>();
   const [signatureType, setSignatureType] = useState<"draw" | "type">("type");
   const [typedSignature, setTypedSignature] = useState("");
   const [isDrawing, setIsDrawing] = useState(false);
@@ -22,9 +20,7 @@ export default function ContractSigningPage({
   const [isDeclining, setIsDeclining] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const { data: contract, isLoading, refetch } = trpc.contract.getByToken.useQuery({
-    token: params.token,
-  });
+  const { data: contract, isLoading, refetch } = trpc.contract.getByToken.useQuery({ token });
 
   const signMutation = trpc.contract.sign.useMutation({
     onSuccess: () => {
@@ -116,7 +112,7 @@ export default function ContractSigningPage({
       }
 
       await signMutation.mutateAsync({
-        token: params.token,
+        token,
         signature,
         signatureType: signatureType === "draw" ? "drawn" : "typed",
         clientIp,
@@ -136,7 +132,7 @@ export default function ContractSigningPage({
     setIsDeclining(true);
 
     try {
-      await declineMutation.mutateAsync({ token: params.token });
+      await declineMutation.mutateAsync({ token });
     } catch (error) {
       console.error("Decline error:", error);
     } finally {
@@ -230,7 +226,7 @@ export default function ContractSigningPage({
                 </div>
                 <ContractPDFButton
                   contractId={contract.id}
-                  signToken={params.token}
+                  signToken={token}
                   variant="outline"
                 />
               </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,7 +36,8 @@ function formatDate(date: Date | string): string {
   });
 }
 
-export default function PaymentPage({ params }: { params: { token: string } }) {
+export default function PaymentPage() {
+  const { token } = useParams<{ token: string }>();
   const searchParams = useSearchParams();
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,9 +45,10 @@ export default function PaymentPage({ params }: { params: { token: string } }) {
   const success = searchParams.get("success") === "true";
   const cancelled = searchParams.get("cancelled") === "true";
 
-  const { data: invoice, isLoading, refetch } = trpc.invoice.getByToken.useQuery({
-    token: params.token,
-  });
+  const { data: invoice, isLoading, refetch } = trpc.invoice.getByToken.useQuery(
+    { token },
+    { enabled: !!token }
+  );
 
   // Refetch if we just completed payment
   useEffect(() => {
@@ -64,7 +66,7 @@ export default function PaymentPage({ params }: { params: { token: string } }) {
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payToken: params.token }),
+        body: JSON.stringify({ payToken: token }),
       });
 
       const data = await response.json();
@@ -246,7 +248,7 @@ export default function PaymentPage({ params }: { params: { token: string } }) {
               <div className="mt-6">
                 <InvoicePDFButton
                   invoiceId={invoice.id}
-                  payToken={params.token}
+                  payToken={token}
                   variant="outline"
                 >
                   <Download className="mr-2 h-4 w-4" />
