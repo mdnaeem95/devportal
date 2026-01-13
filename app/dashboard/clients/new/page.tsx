@@ -51,7 +51,7 @@ export default function NewClientPage() {
   const watchName = watch("name");
   const watchEmail = watch("email");
 
-  const createClient = trpc.client.create.useMutation({
+  const createClient = trpc.clients.create.useMutation({
     onSuccess: (client) => {
       toast.success("Client added successfully!");
       router.push(`/dashboard/clients/${client.id}`);

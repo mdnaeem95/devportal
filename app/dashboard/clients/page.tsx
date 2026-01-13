@@ -38,7 +38,7 @@ export default function ClientsPage() {
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandPalette();
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: clients, isLoading } = trpc.client.list.useQuery();
+  const { data: clients, isLoading } = trpc.clients.list.useQuery();
 
   // Filter clients based on search
   const filteredClients = clients?.filter((client) => {

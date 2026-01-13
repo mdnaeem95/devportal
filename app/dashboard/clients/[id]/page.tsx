@@ -43,11 +43,11 @@ export default function ClientDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const { data: client, isLoading } = trpc.client.get.useQuery({ id: clientId });
+  const { data: client, isLoading } = trpc.clients.get.useQuery({ id: clientId });
   
   const utils = trpc.useUtils();
   
-  const deleteClient = trpc.client.delete.useMutation({
+  const deleteClient = trpc.clients.delete.useMutation({
     onSuccess: () => {
       toast.success("Client deleted");
       router.push("/dashboard/clients");
