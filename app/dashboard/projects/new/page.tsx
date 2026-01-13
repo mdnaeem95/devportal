@@ -11,19 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Skeleton } from "@/components/dashboard/skeleton";
+import { AnimatedCurrency } from "@/components/dashboard/animated-number";
 import { trpc } from "@/lib/trpc";
-import { formatCurrency } from "@/lib/utils";
-import {
-  ArrowLeft,
-  Loader2,
-  Plus,
-  Trash2,
-  FolderKanban,
-  DollarSign,
-  Calendar,
-  GripVertical,
-  ChevronDown,
-} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { ArrowLeft, Loader2, Plus, Trash2, FolderKanban, DollarSign, Calendar, ChevronDown, Check,
+  Users, Sparkles } from "lucide-react";
 
 const projectSchema = z.object({
   name: z.string().min(1, "Project name is required"),
@@ -49,9 +43,8 @@ export default function NewProjectPage() {
   const preselectedClientId = searchParams.get("client");
   
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showMilestones, setShowMilestones] = useState(true);
 
-  const { data: clients, isLoading: clientsLoading } = trpc.client.list.useQuery();
+  const { data: clients, isLoading: clientsLoading } = trpc.clients.list.useQuery();
 
   const {
     register,
@@ -59,7 +52,7 @@ export default function NewProjectPage() {
     handleSubmit,
     watch,
     setValue,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<ProjectFormData>({
     resolver: zodResolver(projectSchema),
     defaultValues: {
@@ -83,14 +76,20 @@ export default function NewProjectPage() {
   }, [preselectedClientId, clients, setValue]);
 
   const milestones = watch("milestones") || [];
+  const selectedClientId = watch("clientId");
+  const selectedClient = clients?.find((c) => c.id === selectedClientId);
   const totalAmount = milestones.reduce((sum, m) => sum + (m.amount || 0), 0);
+
+  // Count valid milestones (with names)
+  const validMilestones = milestones.filter((m) => m.name?.trim()).length;
 
   const createProject = trpc.project.create.useMutation({
     onSuccess: (project) => {
+      toast.success("Project created successfully!");
       router.push(`/dashboard/projects/${project.id}`);
     },
     onError: (error) => {
-      console.error("Failed to create project:", error);
+      toast.error(error.message || "Failed to create project");
       setIsSubmitting(false);
     },
   });
@@ -98,7 +97,6 @@ export default function NewProjectPage() {
   const onSubmit = async (data: ProjectFormData) => {
     setIsSubmitting(true);
     
-    // Transform the data
     const projectData = {
       name: data.name,
       description: data.description,
@@ -110,7 +108,7 @@ export default function NewProjectPage() {
         .map((m) => ({
           name: m.name,
           description: m.description,
-          amount: Math.round(m.amount * 100), // Convert to cents
+          amount: Math.round(m.amount * 100),
           dueDate: m.dueDate ? new Date(m.dueDate) : undefined,
         })),
     };
@@ -140,47 +138,66 @@ export default function NewProjectPage() {
         <div className="mx-auto max-w-3xl">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Project Details */}
-            <Card className="bg-card/50 backdrop-blur-sm">
-              <CardHeader>
+            <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
+              <CardHeader className="border-b border-border/50 bg-secondary/20">
                 <CardTitle className="flex items-center gap-2">
-                  <FolderKanban className="h-5 w-5" />
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/20">
+                    <FolderKanban className="h-4 w-4 text-primary" />
+                  </div>
                   Project Details
                 </CardTitle>
                 <CardDescription>
                   Basic information about the project.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="p-6 space-y-4">
                 {/* Client Selection */}
                 <div className="space-y-2">
                   <Label htmlFor="clientId">
                     Client <span className="text-destructive">*</span>
                   </Label>
-                  <div className="relative">
-                    <select
-                      id="clientId"
-                      {...register("clientId")}
-                      className="flex h-10 w-full appearance-none rounded-lg border border-border/50 bg-secondary/50 px-3 py-2 text-sm transition-colors focus:border-primary/50 focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="">Select a client...</option>
-                      {clients?.map((client) => (
-                        <option key={client.id} value={client.id}>
-                          {client.name} {client.company ? `(${client.company})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                  </div>
+                  {clientsLoading ? (
+                    <Skeleton className="h-10 w-full" />
+                  ) : (
+                    <div className="relative">
+                      <select
+                        id="clientId"
+                        {...register("clientId")}
+                        className={cn(
+                          "flex h-10 w-full appearance-none rounded-lg border bg-secondary/50 px-3 py-2 text-sm transition-all focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/20",
+                          errors.clientId
+                            ? "border-destructive focus:ring-destructive/20"
+                            : "border-border/50 focus:border-primary/50",
+                          selectedClientId && "border-primary/50 bg-primary/5"
+                        )}
+                      >
+                        <option value="">Select a client...</option>
+                        {clients?.map((client) => (
+                          <option key={client.id} value={client.id}>
+                            {client.name} {client.company ? `(${client.company})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                    </div>
+                  )}
                   {errors.clientId && (
                     <p className="text-sm text-destructive">{errors.clientId.message}</p>
                   )}
-                  {clients?.length === 0 && (
-                    <p className="text-sm text-muted-foreground">
-                      No clients yet.{" "}
-                      <Link href="/dashboard/clients/new" className="text-primary hover:underline">
-                        Add a client first
+                  {selectedClient && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground animate-in fade-in slide-in-from-top-1">
+                      <Check className="h-3 w-3 text-primary" />
+                      <span>{selectedClient.email}</span>
+                    </div>
+                  )}
+                  {!clientsLoading && clients?.length === 0 && (
+                    <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm">
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">No clients yet.</span>
+                      <Link href="/dashboard/clients/new" className="text-primary hover:underline font-medium">
+                        Add a client first →
                       </Link>
-                    </p>
+                    </div>
                   )}
                 </div>
 
@@ -193,7 +210,9 @@ export default function NewProjectPage() {
                     id="name"
                     placeholder="e.g., Website Redesign, Mobile App MVP"
                     {...register("name")}
-                    className={errors.name ? "border-destructive" : ""}
+                    className={cn(
+                      errors.name && "border-destructive focus:ring-destructive/20"
+                    )}
                   />
                   {errors.name && (
                     <p className="text-sm text-destructive">{errors.name.message}</p>
@@ -208,7 +227,7 @@ export default function NewProjectPage() {
                     placeholder="Brief description of the project scope..."
                     {...register("description")}
                     rows={3}
-                    className="flex w-full rounded-lg border border-border/50 bg-secondary/50 px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus:border-primary/50 focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    className="flex w-full rounded-lg border border-border/50 bg-secondary/50 px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus:border-primary/50 focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
                   />
                 </div>
 
@@ -241,12 +260,14 @@ export default function NewProjectPage() {
             </Card>
 
             {/* Milestones */}
-            <Card className="bg-card/50 backdrop-blur-sm">
-              <CardHeader>
+            <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
+              <CardHeader className="border-b border-border/50 bg-secondary/20">
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="flex items-center gap-2">
-                      <DollarSign className="h-5 w-5" />
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-500/20">
+                        <DollarSign className="h-4 w-4 text-green-500" />
+                      </div>
                       Milestones
                     </CardTitle>
                     <CardDescription>
@@ -254,31 +275,50 @@ export default function NewProjectPage() {
                     </CardDescription>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-muted-foreground">Total</p>
-                    <p className="text-xl font-bold text-success">
-                      {formatCurrency(totalAmount * 100)}
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                      Total Value
                     </p>
+                    <p className="text-2xl font-bold text-green-500">
+                      <AnimatedCurrency value={totalAmount * 100} />
+                    </p>
+                    {validMilestones > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {validMilestones} milestone{validMilestones !== 1 ? "s" : ""}
+                      </p>
+                    )}
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="p-6 space-y-4">
                 {fields.map((field, index) => (
                   <div
                     key={field.id}
-                    className="rounded-lg border border-border/50 bg-secondary/30 p-4"
+                    className={cn(
+                      "group rounded-lg border bg-secondary/20 p-4 transition-all duration-200",
+                      milestones[index]?.name
+                        ? "border-border/50"
+                        : "border-dashed border-border"
+                    )}
                   >
                     <div className="flex items-start gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-sm font-medium text-muted-foreground">
+                      <div
+                        className={cn(
+                          "flex h-8 w-8 items-center justify-center rounded-lg text-sm font-medium transition-colors",
+                          milestones[index]?.name
+                            ? "bg-primary/20 text-primary"
+                            : "bg-secondary text-muted-foreground"
+                        )}
+                      >
                         {index + 1}
                       </div>
                       <div className="flex-1 space-y-3">
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">
-                              Milestone Name
+                              Milestone Name <span className="text-destructive">*</span>
                             </Label>
                             <Input
-                              placeholder="e.g., Design Phase"
+                              placeholder="e.g., Design Phase, Development, Launch"
                               {...register(`milestones.${index}.name`)}
                             />
                           </div>
@@ -286,30 +326,34 @@ export default function NewProjectPage() {
                             <Label className="text-xs text-muted-foreground">
                               Amount ($)
                             </Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              placeholder="0.00"
-                              {...register(`milestones.${index}.amount`, {
-                                valueAsNumber: true,
-                              })}
-                            />
+                            <div className="relative">
+                              <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                placeholder="0.00"
+                                className="pl-9"
+                                {...register(`milestones.${index}.amount`, {
+                                  valueAsNumber: true,
+                                })}
+                              />
+                            </div>
                           </div>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">
-                              Description (optional)
+                              Description
                             </Label>
                             <Input
-                              placeholder="What's included..."
+                              placeholder="What's included in this milestone..."
                               {...register(`milestones.${index}.description`)}
                             />
                           </div>
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">
-                              Due Date (optional)
+                              Due Date
                             </Label>
                             <Input
                               type="date"
@@ -323,7 +367,7 @@ export default function NewProjectPage() {
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          className="h-8 w-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10"
                           onClick={() => remove(index)}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -336,28 +380,54 @@ export default function NewProjectPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full border-dashed"
+                  className="w-full border-dashed hover:border-primary hover:bg-primary/5 transition-colors"
                   onClick={addMilestone}
                 >
                   <Plus className="h-4 w-4" />
                   Add Milestone
                 </Button>
+
+                {/* Quick tip */}
+                <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm">
+                  <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                  <p className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Tip:</span> Milestones help you track progress and bill incrementally. You can create invoices directly from milestones later.
+                  </p>
+                </div>
               </CardContent>
             </Card>
 
             {/* Submit */}
-            <div className="flex items-center justify-end gap-3">
-              <Button type="button" variant="ghost" asChild>
-                <Link href="/dashboard/projects">Cancel</Link>
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting || clientsLoading}
-                className="gradient-primary border-0"
-              >
-                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isSubmitting ? "Creating..." : "Create Project"}
-              </Button>
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/50 p-4">
+              <div className="text-sm text-muted-foreground">
+                {isDirty ? (
+                  <span className="text-primary">Unsaved changes</span>
+                ) : (
+                  <span>Fill in the project details above</span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <Button type="button" variant="ghost" asChild>
+                  <Link href="/dashboard/projects">Cancel</Link>
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || clientsLoading}
+                  className="gradient-primary border-0 min-w-35"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4" />
+                      Create Project
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           </form>
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,10 +11,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Skeleton } from "@/components/dashboard/skeleton";
 import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Users, Mail, Building, Phone, MapPin, FileText, Check, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  Users,
+  Mail,
+  Building,
+  Phone,
+  MapPin,
+  FileText,
+  Check,
+} from "lucide-react";
 
 const clientSchema = z.object({
   name: z.string().min(1, "Client name is required"),
@@ -27,14 +38,20 @@ const clientSchema = z.object({
 
 type ClientFormData = z.infer<typeof clientSchema>;
 
-export default function NewClientPage() {
+export default function EditClientPage() {
   const router = useRouter();
+  const params = useParams();
+  const clientId = params.id as string;
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const { data: client, isLoading } = trpc.clients.get.useQuery({ id: clientId });
 
   const {
     register,
     handleSubmit,
     watch,
+    reset,
     formState: { errors, isDirty },
   } = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),
@@ -48,23 +65,42 @@ export default function NewClientPage() {
     },
   });
 
+  // Populate form when client data loads
+  useEffect(() => {
+    if (client) {
+      reset({
+        name: client.name,
+        email: client.email,
+        company: client.company || "",
+        phone: client.phone || "",
+        address: client.address || "",
+        notes: client.notes || "",
+      });
+    }
+  }, [client, reset]);
+
   const watchName = watch("name");
   const watchEmail = watch("email");
 
-  const createClient = trpc.client.create.useMutation({
-    onSuccess: (client) => {
-      toast.success("Client added successfully!");
-      router.push(`/dashboard/clients/${client.id}`);
+  const utils = trpc.useUtils();
+
+  const updateClient = trpc.clients.update.useMutation({
+    onSuccess: () => {
+      toast.success("Client updated successfully!");
+      utils.clients.get.invalidate({ id: clientId });
+      utils.clients.list.invalidate();
+      router.push(`/dashboard/clients/${clientId}`);
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to add client");
+      toast.error(error.message || "Failed to update client");
       setIsSubmitting(false);
     },
   });
 
   const onSubmit = async (data: ClientFormData) => {
     setIsSubmitting(true);
-    createClient.mutate({
+    updateClient.mutate({
+      id: clientId,
       name: data.name,
       email: data.email,
       company: data.company || undefined,
@@ -74,23 +110,45 @@ export default function NewClientPage() {
     });
   };
 
-  // Generate initials preview
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2) || "?";
-  };
+  if (isLoading) {
+    return (
+      <>
+        <Header title="Edit Client" />
+        <div className="flex-1 overflow-auto p-6">
+          <div className="mx-auto max-w-2xl space-y-6">
+            <Skeleton className="h-24 rounded-xl" />
+            <Skeleton className="h-96 rounded-xl" />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (!client) {
+    return (
+      <>
+        <Header title="Client Not Found" />
+        <div className="flex-1 overflow-auto p-6">
+          <Card className="mx-auto max-w-md bg-card/50">
+            <CardContent className="flex flex-col items-center py-12">
+              <p className="text-muted-foreground">This client doesn't exist or was deleted.</p>
+              <Button className="mt-4" asChild>
+                <Link href="/dashboard/clients">Back to Clients</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
       <Header
-        title="Add Client"
+        title="Edit Client"
         action={
           <Button variant="ghost" asChild>
-            <Link href="/dashboard/clients">
+            <Link href={`/dashboard/clients/${clientId}`}>
               <ArrowLeft className="h-4 w-4" />
               Back
             </Link>
@@ -102,25 +160,23 @@ export default function NewClientPage() {
         <div className="mx-auto max-w-2xl">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Preview Card */}
-            {(watchName || watchEmail) && (
-              <Card className="bg-linear-to-br from-primary/10 to-primary/5 border-primary/20 overflow-hidden animate-in fade-in slide-in-from-top-2">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-xl gradient-primary text-lg font-semibold text-white shadow-lg shadow-primary/25">
-                      {getInitials(watchName || "?")}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-lg">
-                        {watchName || "Client Name"}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {watchEmail || "email@example.com"}
-                      </p>
-                    </div>
+            <Card className="bg-linear-to-br from-primary/10 to-primary/5 border-primary/20 overflow-hidden">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-xl gradient-primary text-lg font-semibold text-white shadow-lg shadow-primary/25">
+                    {getInitials(watchName || client.name)}
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                  <div>
+                    <p className="font-semibold text-lg">
+                      {watchName || client.name}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {watchEmail || client.email}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Client Details */}
             <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
@@ -132,7 +188,7 @@ export default function NewClientPage() {
                   Client Information
                 </CardTitle>
                 <CardDescription>
-                  Basic contact details for your client.
+                  Update contact details for your client.
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-6 space-y-4">
@@ -241,41 +297,33 @@ export default function NewClientPage() {
               </CardContent>
             </Card>
 
-            {/* Tip */}
-            <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm">
-              <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-              <p className="text-muted-foreground">
-                <span className="font-medium text-foreground">Tip:</span> After adding a client, you can create projects for them and send contracts and invoices directly.
-              </p>
-            </div>
-
             {/* Submit */}
             <div className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/50 p-4">
               <div className="text-sm text-muted-foreground">
                 {isDirty ? (
                   <span className="text-primary">Unsaved changes</span>
                 ) : (
-                  <span>Fill in the client details above</span>
+                  <span>No changes made</span>
                 )}
               </div>
               <div className="flex items-center gap-3">
                 <Button type="button" variant="ghost" asChild>
-                  <Link href="/dashboard/clients">Cancel</Link>
+                  <Link href={`/dashboard/clients/${clientId}`}>Cancel</Link>
                 </Button>
                 <Button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="gradient-primary border-0 min-w-30"
+                  disabled={isSubmitting || !isDirty}
+                  className="gradient-primary border-0 min-w-35"
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Adding...
+                      Saving...
                     </>
                   ) : (
                     <>
                       <Check className="h-4 w-4" />
-                      Add Client
+                      Save Changes
                     </>
                   )}
                 </Button>

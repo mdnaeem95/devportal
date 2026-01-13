@@ -1,19 +1,38 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../trpc";
-import { clients } from "../db/schema";
-import { eq, desc } from "drizzle-orm";
+import { clients, projects, invoices } from "../db/schema";
+import { eq, desc, count, and } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 export const clientRouter = router({
-  // List all clients for the current user
+  // List all clients for the current user with project count
   list: protectedProcedure.query(async ({ ctx }) => {
-    return ctx.db.query.clients.findMany({
+    const clientList = await ctx.db.query.clients.findMany({
       where: eq(clients.userId, ctx.user.id),
       orderBy: [desc(clients.createdAt)],
     });
+
+    // Get project counts for each client
+    const projectCounts = await ctx.db
+      .select({
+        clientId: projects.clientId,
+        count: count(),
+      })
+      .from(projects)
+      .where(eq(projects.userId, ctx.user.id))
+      .groupBy(projects.clientId);
+
+    const countMap = new Map(
+      projectCounts.map((pc) => [pc.clientId, pc.count])
+    );
+
+    return clientList.map((client) => ({
+      ...client,
+      projectCount: countMap.get(client.id) ?? 0,
+    }));
   }),
 
-  // Get a single client by ID
+  // Get a single client by ID with projects and invoices
   get: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -35,7 +54,29 @@ export const clientRouter = router({
         });
       }
 
-      return client;
+      // Fetch related projects
+      const clientProjects = await ctx.db.query.projects.findMany({
+        where: and(
+          eq(projects.clientId, input.id),
+          eq(projects.userId, ctx.user.id)
+        ),
+        orderBy: [desc(projects.updatedAt)],
+      });
+
+      // Fetch related invoices
+      const clientInvoices = await ctx.db.query.invoices.findMany({
+        where: and(
+          eq(invoices.clientId, input.id),
+          eq(invoices.userId, ctx.user.id)
+        ),
+        orderBy: [desc(invoices.createdAt)],
+      });
+
+      return {
+        ...client,
+        projects: clientProjects,
+        invoices: clientInvoices,
+      };
     }),
 
   // Create a new client
@@ -92,7 +133,10 @@ export const clientRouter = router({
 
       const [updated] = await ctx.db
         .update(clients)
-        .set(data)
+        .set({
+          ...data,
+          updatedAt: new Date(),
+        })
         .where(eq(clients.id, id))
         .returning();
 

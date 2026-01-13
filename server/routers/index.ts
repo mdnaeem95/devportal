@@ -10,7 +10,7 @@ import { stripeRouter } from "./stripe";
 import { settingsRouter } from "./settings";
 
 export const appRouter = router({
-  client: clientRouter,
+  clients: clientRouter,
   project: projectRouter,
   dashboard: dashboardRouter,
   invoice: invoiceRouter,

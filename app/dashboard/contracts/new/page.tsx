@@ -34,7 +34,7 @@ export default function NewContractPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { data: clients } = trpc.client.list.useQuery();
+  const { data: clients } = trpc.clients.list.useQuery();
   const { data: projects } = trpc.project.list.useQuery();
   const { data: templates } = trpc.template.list.useQuery({ type: "contract" });
 

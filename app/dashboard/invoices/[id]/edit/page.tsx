@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,19 +16,16 @@ import { AnimatedCurrency } from "@/components/dashboard/animated-number";
 import { trpc } from "@/lib/trpc";
 import { cn, formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Plus, Trash2, FileText, DollarSign, Calendar, ChevronDown, Check,
-  Sparkles, Percent } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Trash2, FileText, DollarSign, Calendar, Check, Percent, AlertTriangle } from "lucide-react";
 
 const invoiceSchema = z.object({
-  clientId: z.string().min(1, "Please select a client"),
-  projectId: z.string().optional(),
   dueDate: z.string().min(1, "Due date is required"),
-  currency: z.string().default("USD"),
   taxRate: z.number().min(0).max(100).optional(),
   notes: z.string().optional(),
   lineItems: z
     .array(
       z.object({
+        id: z.string(),
         description: z.string().min(1, "Description is required"),
         quantity: z.number().min(1, "Quantity must be at least 1"),
         unitPrice: z.number().min(0, "Price must be positive"),
@@ -39,49 +36,29 @@ const invoiceSchema = z.object({
 
 type InvoiceFormData = z.infer<typeof invoiceSchema>;
 
-const currencies = [
-  { value: "USD", label: "USD ($)" },
-  { value: "EUR", label: "EUR (€)" },
-  { value: "GBP", label: "GBP (£)" },
-  { value: "SGD", label: "SGD (S$)" },
-  { value: "AUD", label: "AUD (A$)" },
-  { value: "CAD", label: "CAD (C$)" },
-];
-
-export default function NewInvoicePage() {
+export default function EditInvoicePage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const preselectedClientId = searchParams.get("client");
-  const preselectedProjectId = searchParams.get("project");
-  const preselectedMilestoneId = searchParams.get("milestone");
+  const params = useParams();
+  const invoiceId = params.id as string;
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { data: clients, isLoading: clientsLoading } = trpc.clients.list.useQuery();
-  const { data: projects, isLoading: projectsLoading } = trpc.project.list.useQuery();
-
-  // Get default due date (14 days from now)
-  const defaultDueDate = new Date();
-  defaultDueDate.setDate(defaultDueDate.getDate() + 14);
-  const formattedDueDate = defaultDueDate.toISOString().split("T")[0];
+  const { data: invoice, isLoading } = trpc.invoice.get.useQuery({ id: invoiceId });
 
   const {
     register,
     control,
     handleSubmit,
     watch,
-    setValue,
+    reset,
     formState: { errors, isDirty },
   } = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
-      clientId: preselectedClientId || "",
-      projectId: preselectedProjectId || "",
-      dueDate: formattedDueDate,
-      currency: "USD",
+      dueDate: "",
       taxRate: 0,
       notes: "",
-      lineItems: [{ description: "", quantity: 1, unitPrice: 0 }],
+      lineItems: [],
     },
   });
 
@@ -90,27 +67,34 @@ export default function NewInvoicePage() {
     name: "lineItems",
   });
 
-  // Set preselected values when data loads
+  // Populate form when invoice loads
   useEffect(() => {
-    if (preselectedClientId && clients) {
-      setValue("clientId", preselectedClientId);
-    }
-    if (preselectedProjectId && projects) {
-      setValue("projectId", preselectedProjectId);
-    }
-  }, [preselectedClientId, preselectedProjectId, clients, projects, setValue]);
+    if (invoice) {
+      const existingLineItems = invoice.lineItems as Array<{
+        id: string;
+        description: string;
+        quantity: number;
+        unitPrice: number;
+        amount: number;
+      }>;
 
-  const watchClientId = watch("clientId");
-  const watchProjectId = watch("projectId");
+      reset({
+        dueDate: new Date(invoice.dueDate).toISOString().split("T")[0],
+        taxRate: invoice.taxRate ? parseFloat(invoice.taxRate) : 0,
+        notes: invoice.notes || "",
+        lineItems: existingLineItems.map((item) => ({
+          id: item.id,
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice / 100, // Convert from cents to dollars for display
+        })),
+      });
+    }
+  }, [invoice, reset]);
+
   const watchLineItems = watch("lineItems");
   const watchTaxRate = watch("taxRate") || 0;
-  const watchCurrency = watch("currency");
-
-  const selectedClient = clients?.find((c) => c.id === watchClientId);
-  const selectedProject = projects?.find((p) => p.id === watchProjectId);
-
-  // Filter projects by selected client
-  const clientProjects = projects?.filter((p) => p.clientId === watchClientId);
+  const currency = invoice?.currency ?? "USD";
 
   // Calculate totals
   const subtotal = watchLineItems.reduce((sum, item) => {
@@ -119,13 +103,16 @@ export default function NewInvoicePage() {
   const taxAmount = Math.round(subtotal * (watchTaxRate / 100));
   const total = subtotal + taxAmount;
 
-  const createInvoice = trpc.invoice.create.useMutation({
-    onSuccess: (invoice) => {
-      toast.success("Invoice created successfully!");
-      router.push(`/dashboard/invoices/${invoice.id}`);
+  const utils = trpc.useUtils();
+
+  const updateInvoice = trpc.invoice.update.useMutation({
+    onSuccess: () => {
+      toast.success("Invoice updated successfully!");
+      utils.invoice.get.invalidate({ id: invoiceId });
+      router.push(`/dashboard/invoices/${invoiceId}`);
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to create invoice");
+      toast.error(error.message || "Failed to update invoice");
       setIsSubmitting(false);
     },
   });
@@ -134,17 +121,15 @@ export default function NewInvoicePage() {
     setIsSubmitting(true);
 
     const invoiceData = {
-      clientId: data.clientId,
-      projectId: data.projectId || undefined,
+      id: invoiceId,
       dueDate: new Date(data.dueDate),
-      currency: data.currency,
       taxRate: data.taxRate || undefined,
       notes: data.notes || undefined,
-      lineItems: data.lineItems.map((item, index) => {
+      lineItems: data.lineItems.map((item) => {
         const unitPriceCents = Math.round(item.unitPrice * 100);
         const amount = item.quantity * unitPriceCents;
         return {
-          id: `item-${Date.now()}-${index}`,
+          id: item.id,
           description: item.description,
           quantity: item.quantity,
           unitPrice: unitPriceCents,
@@ -153,20 +138,89 @@ export default function NewInvoicePage() {
       }),
     };
 
-    createInvoice.mutate(invoiceData);
+    updateInvoice.mutate(invoiceData);
   };
 
   const addLineItem = () => {
-    append({ description: "", quantity: 1, unitPrice: 0 });
+    append({
+      id: `item-${Date.now()}-${fields.length}`,
+      description: "",
+      quantity: 1,
+      unitPrice: 0,
+    });
   };
+
+  if (isLoading) {
+    return (
+      <>
+        <Header title="Edit Invoice" />
+        <div className="flex-1 overflow-auto p-6">
+          <div className="mx-auto max-w-3xl space-y-6">
+            <Skeleton className="h-48 rounded-xl" />
+            <Skeleton className="h-96 rounded-xl" />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (!invoice) {
+    return (
+      <>
+        <Header title="Invoice Not Found" />
+        <div className="flex-1 overflow-auto p-6">
+          <Card className="mx-auto max-w-md bg-card/50">
+            <CardContent className="flex flex-col items-center py-12">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary">
+                <FileText className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="mt-6 text-lg font-semibold">Invoice not found</h3>
+              <p className="mt-2 text-muted-foreground">
+                This invoice doesn't exist or was deleted.
+              </p>
+              <Button className="mt-6" asChild>
+                <Link href="/dashboard/invoices">Back to Invoices</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </>
+    );
+  }
+
+  // Only allow editing draft invoices
+  if (invoice.status !== "draft") {
+    return (
+      <>
+        <Header title="Cannot Edit Invoice" />
+        <div className="flex-1 overflow-auto p-6">
+          <Card className="mx-auto max-w-md bg-card/50">
+            <CardContent className="flex flex-col items-center py-12">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-500/20">
+                <AlertTriangle className="h-8 w-8 text-orange-500" />
+              </div>
+              <h3 className="mt-6 text-lg font-semibold">Cannot edit this invoice</h3>
+              <p className="mt-2 text-center text-muted-foreground max-w-xs">
+                Only draft invoices can be edited. This invoice has already been sent.
+              </p>
+              <Button className="mt-6" asChild>
+                <Link href={`/dashboard/invoices/${invoiceId}`}>View Invoice</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
       <Header
-        title="New Invoice"
+        title={`Edit ${invoice.invoiceNumber}`}
+        description={`Invoice for ${invoice.client.name}`}
         action={
           <Button variant="ghost" asChild>
-            <Link href="/dashboard/invoices">
+            <Link href={`/dashboard/invoices/${invoiceId}`}>
               <ArrowLeft className="h-4 w-4" />
               Back
             </Link>
@@ -177,7 +231,7 @@ export default function NewInvoicePage() {
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-3xl">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            {/* Invoice Details */}
+            {/* Invoice Info (Read-only) */}
             <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
               <CardHeader className="border-b border-border/50 bg-secondary/20">
                 <CardTitle className="flex items-center gap-2">
@@ -186,80 +240,31 @@ export default function NewInvoicePage() {
                   </div>
                   Invoice Details
                 </CardTitle>
-                <CardDescription>Select the client and project for this invoice.</CardDescription>
+                <CardDescription>
+                  Client and project cannot be changed after creation.
+                </CardDescription>
               </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                {/* Client Selection */}
-                <div className="space-y-2">
-                  <Label htmlFor="clientId">
-                    Client <span className="text-destructive">*</span>
-                  </Label>
-                  {clientsLoading ? (
-                    <Skeleton className="h-10 w-full" />
-                  ) : (
-                    <div className="relative">
-                      <select
-                        id="clientId"
-                        {...register("clientId")}
-                        className={cn(
-                          "flex h-10 w-full appearance-none rounded-lg border bg-secondary/50 px-3 py-2 text-sm transition-all focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/20",
-                          errors.clientId
-                            ? "border-destructive focus:ring-destructive/20"
-                            : "border-border/50 focus:border-primary/50",
-                          watchClientId && "border-primary/50 bg-primary/5"
-                        )}
-                      >
-                        <option value="">Select a client...</option>
-                        {clients?.map((client) => (
-                          <option key={client.id} value={client.id}>
-                            {client.name} {client.company ? `(${client.company})` : ""}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                    </div>
-                  )}
-                  {errors.clientId && (
-                    <p className="text-sm text-destructive">{errors.clientId.message}</p>
-                  )}
-                  {selectedClient && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground animate-in fade-in slide-in-from-top-1">
-                      <Check className="h-3 w-3 text-primary" />
-                      <span>{selectedClient.email}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Project Selection (optional) */}
-                <div className="space-y-2">
-                  <Label htmlFor="projectId">Project (optional)</Label>
-                  <div className="relative">
-                    <select
-                      id="projectId"
-                      {...register("projectId")}
-                      disabled={!watchClientId}
-                      className={cn(
-                        "flex h-10 w-full appearance-none rounded-lg border border-border/50 bg-secondary/50 px-3 py-2 text-sm transition-all focus:border-primary/50 focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                      )}
-                    >
-                      <option value="">No project (general invoice)</option>
-                      {clientProjects?.map((project) => (
-                        <option key={project.id} value={project.id}>
-                          {project.name}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                  </div>
-                </div>
-
-                {/* Due Date & Currency Row */}
+              <CardContent className="p-6">
                 <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Client</Label>
+                    <p className="font-medium">{invoice.client.name}</p>
+                    <p className="text-sm text-muted-foreground">{invoice.client.email}</p>
+                  </div>
+                  {invoice.project && (
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Project</Label>
+                      <p className="font-medium">{invoice.project.name}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-border/50">
                   <div className="space-y-2">
                     <Label htmlFor="dueDate">
                       Due Date <span className="text-destructive">*</span>
                     </Label>
-                    <div className="relative">
+                    <div className="relative max-w-xs">
                       <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         id="dueDate"
@@ -271,23 +276,6 @@ export default function NewInvoicePage() {
                     {errors.dueDate && (
                       <p className="text-sm text-destructive">{errors.dueDate.message}</p>
                     )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="currency">Currency</Label>
-                    <div className="relative">
-                      <select
-                        id="currency"
-                        {...register("currency")}
-                        className="flex h-10 w-full appearance-none rounded-lg border border-border/50 bg-secondary/50 px-3 py-2 text-sm transition-all focus:border-primary/50 focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      >
-                        {currencies.map((currency) => (
-                          <option key={currency.value} value={currency.value}>
-                            {currency.label}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -304,12 +292,12 @@ export default function NewInvoicePage() {
                       </div>
                       Line Items
                     </CardTitle>
-                    <CardDescription>Add items to be billed on this invoice.</CardDescription>
+                    <CardDescription>Update the items on this invoice.</CardDescription>
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Total</p>
                     <p className="text-2xl font-bold text-green-500">
-                      <AnimatedCurrency value={total} currency={watchCurrency} />
+                      <AnimatedCurrency value={total} currency={currency} />
                     </p>
                   </div>
                 </div>
@@ -378,7 +366,7 @@ export default function NewInvoicePage() {
                                 (watchLineItems[index]?.quantity || 0) *
                                   (watchLineItems[index]?.unitPrice || 0) *
                                   100,
-                                watchCurrency
+                                currency
                               )}
                             </div>
                           </div>
@@ -414,7 +402,7 @@ export default function NewInvoicePage() {
                   <div className="w-72 space-y-3">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Subtotal</span>
-                      <span className="font-medium">{formatCurrency(subtotal, watchCurrency)}</span>
+                      <span className="font-medium">{formatCurrency(subtotal, currency)}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
@@ -432,11 +420,11 @@ export default function NewInvoicePage() {
                           <Percent className="absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
                         </div>
                       </div>
-                      <span className="font-medium">{formatCurrency(taxAmount, watchCurrency)}</span>
+                      <span className="font-medium">{formatCurrency(taxAmount, currency)}</span>
                     </div>
                     <div className="flex justify-between border-t border-border/50 pt-3 text-lg font-bold">
                       <span>Total</span>
-                      <span className="text-green-500">{formatCurrency(total, watchCurrency)}</span>
+                      <span className="text-green-500">{formatCurrency(total, currency)}</span>
                     </div>
                   </div>
                 </div>
@@ -458,42 +446,33 @@ export default function NewInvoicePage() {
               </CardContent>
             </Card>
 
-            {/* Tip */}
-            <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm">
-              <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-              <p className="text-muted-foreground">
-                <span className="font-medium text-foreground">Tip:</span> After creating the
-                invoice, you can send it directly to your client via email with a payment link.
-              </p>
-            </div>
-
             {/* Submit */}
             <div className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/50 p-4">
               <div className="text-sm text-muted-foreground">
                 {isDirty ? (
                   <span className="text-primary">Unsaved changes</span>
                 ) : (
-                  <span>Fill in the invoice details above</span>
+                  <span>No changes made</span>
                 )}
               </div>
               <div className="flex items-center gap-3">
                 <Button type="button" variant="ghost" asChild>
-                  <Link href="/dashboard/invoices">Cancel</Link>
+                  <Link href={`/dashboard/invoices/${invoiceId}`}>Cancel</Link>
                 </Button>
                 <Button
                   type="submit"
-                  disabled={isSubmitting || clientsLoading}
+                  disabled={isSubmitting || !isDirty}
                   className="gradient-primary border-0 min-w-35"
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Creating...
+                      Saving...
                     </>
                   ) : (
                     <>
                       <Check className="h-4 w-4" />
-                      Create Invoice
+                      Save Changes
                     </>
                   )}
                 </Button>

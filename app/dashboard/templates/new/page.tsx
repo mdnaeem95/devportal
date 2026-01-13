@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Loader2, FileText, Receipt } from "lucide-react";
+import { toast } from "sonner";
+import { ArrowLeft, Loader2, FileText, Receipt, Check, ChevronRight, Eye, PenLine, Sparkles, FileSignature } from "lucide-react";
 
 const templateSchema = z.object({
   type: z.enum(["contract", "invoice"]),
@@ -24,75 +25,72 @@ const templateSchema = z.object({
 
 type TemplateFormData = z.infer<typeof templateSchema>;
 
-const defaultContractContent = `# {{project_name}} - Service Agreement
+const defaultContractContent = `# Service Agreement
 
-**Date:** {{date}}
-**Client:** {{client_name}}
-**Developer:** {{developer_name}}
+This Service Agreement ("Agreement") is entered into as of {{date}} between:
 
-## 1. Scope of Work
+**Developer:** {{businessName}}
+**Client:** {{clientName}}
 
-{{scope_description}}
+## 1. Services
 
-## 2. Timeline
+The Developer agrees to provide the following services:
 
-- **Start Date:** {{start_date}}
-- **Estimated Completion:** {{end_date}}
+{{projectDescription}}
 
-## 3. Payment Terms
+## 2. Payment Terms
 
-Total project cost: **{{total_amount}}**
+The total project cost is {{totalAmount}}, payable according to the following milestones:
 
-Payment schedule:
 {{milestones}}
 
-## 4. Intellectual Property
+## 3. Intellectual Property
 
-Upon receipt of full payment, all intellectual property rights for the deliverables will be transferred to the Client, except for:
-- Pre-existing code and libraries owned by the Developer
-- Open-source components (subject to their respective licenses)
+Upon receipt of full payment, Developer assigns to Client all rights, title, and interest in the deliverables created specifically for this project.
 
-## 5. Confidentiality
+Pre-existing code, libraries, and open-source components remain the property of their respective owners and are licensed to Client for use in the project.
 
-Both parties agree to maintain confidentiality of proprietary information shared during this project.
+## 4. Timeline
 
-## 6. Revisions & Changes
+Work will commence upon signing of this agreement and receipt of any required deposit.
 
-- Minor revisions are included in the project scope
-- Major changes or additions will be quoted separately
-- All change requests must be submitted in writing
+## 5. Revisions
 
-## 7. Warranty
+This agreement includes up to two rounds of revisions. Additional revisions will be billed at the Developer's standard hourly rate.
 
-The Developer warrants that the deliverables will function as specified for **30 days** after project completion. Bug fixes during this period are included at no additional cost.
+## 6. Termination
 
-## 8. Termination
+Either party may terminate this agreement with 14 days written notice. Client will be responsible for payment of all work completed up to the termination date.
 
-Either party may terminate this agreement with **14 days** written notice. Upon termination:
-- Client pays for all work completed to date
-- Developer delivers all completed work
+## 7. Confidentiality
+
+Both parties agree to maintain confidentiality of proprietary information shared during the course of this project.
+
+## 8. Warranty
+
+The Developer warrants that the deliverables will function as specified for 30 days after project completion. Bug fixes during this period are included at no additional cost.
 
 ---
 
-**Client Signature:** _________________________ **Date:** _________
+**Accepted and Agreed:**
 
-**Developer Signature:** _________________________ **Date:** _________
+Client Signature: _________________________
+
+Date: _________________________
 `;
 
-const defaultInvoiceContent = `# Invoice {{invoice_number}}
+const defaultInvoiceContent = `# Invoice {{invoiceNumber}}
 
 **From:**
-{{developer_name}}
-{{developer_address}}
-{{developer_email}}
+{{businessName}}
+{{businessAddress}}
 
 **To:**
-{{client_name}}
-{{client_company}}
-{{client_email}}
+{{clientName}}
+{{clientCompany}}
 
-**Invoice Date:** {{invoice_date}}
-**Due Date:** {{due_date}}
+**Invoice Date:** {{invoiceDate}}
+**Due Date:** {{dueDate}}
 
 ---
 
@@ -100,19 +98,19 @@ const defaultInvoiceContent = `# Invoice {{invoice_number}}
 
 | Description | Quantity | Rate | Amount |
 |-------------|----------|------|--------|
-{{line_items}}
+{{lineItems}}
 
 ---
 
 **Subtotal:** {{subtotal}}
-**Tax ({{tax_rate}}%):** {{tax_amount}}
+**Tax ({{taxRate}}%):** {{taxAmount}}
 **Total Due:** {{total}}
 
 ---
 
-## Payment Instructions
+## Payment Methods
 
-{{payment_instructions}}
+Please pay via the link provided in the email, or contact us for alternative payment arrangements.
 
 Thank you for your business!
 `;
@@ -121,7 +119,9 @@ export default function NewTemplatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const typeParam = searchParams.get("type") as "contract" | "invoice" | null;
-  
+
+  const [step, setStep] = useState<"type" | "details" | "content">(typeParam ? "details" : "type");
+  const [showPreview, setShowPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
@@ -141,8 +141,9 @@ export default function NewTemplatePage() {
   });
 
   const selectedType = watch("type");
+  const watchName = watch("name");
+  const watchContent = watch("content");
 
-  // Update default content when type changes
   const handleTypeChange = (type: "contract" | "invoice") => {
     setValue("type", type);
     setValue("content", type === "invoice" ? defaultInvoiceContent : defaultContractContent);
@@ -150,10 +151,11 @@ export default function NewTemplatePage() {
 
   const createTemplate = trpc.template.create.useMutation({
     onSuccess: (template) => {
+      toast.success("Template created!");
       router.push(`/dashboard/templates/${template.id}`);
     },
     onError: (error) => {
-      console.error("Failed to create template:", error);
+      toast.error(error.message || "Failed to create template");
       setIsSubmitting(false);
     },
   });
@@ -163,10 +165,16 @@ export default function NewTemplatePage() {
     createTemplate.mutate(data);
   };
 
+  const canProceedToDetails = selectedType;
+  const canProceedToContent = watchName;
+
+  const TypeIcon = selectedType === "contract" ? FileText : Receipt;
+
   return (
     <>
       <Header
         title="New Template"
+        description="Create a reusable template for contracts or invoices"
         action={
           <Button variant="ghost" asChild>
             <Link href="/dashboard/templates">
@@ -179,174 +187,371 @@ export default function NewTemplatePage() {
 
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-4xl">
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            {/* Template Info */}
-            <Card className="bg-card/50 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle>Template Details</CardTitle>
-                <CardDescription>
-                  Create a reusable template for contracts or invoices.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Type Selection */}
-                <div className="space-y-2">
-                  <Label>Type</Label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleTypeChange("contract")}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg border p-4 transition-all text-left",
-                        selectedType === "contract"
-                          ? "border-primary bg-primary/10"
-                          : "border-border/50 hover:border-border hover:bg-secondary/50"
-                      )}
-                    >
-                      <div className={cn(
-                        "flex h-10 w-10 items-center justify-center rounded-lg",
-                        selectedType === "contract" ? "gradient-primary" : "bg-secondary"
-                      )}>
-                        <FileText className={cn(
-                          "h-5 w-5",
-                          selectedType === "contract" ? "text-white" : "text-muted-foreground"
-                        )} />
+          {/* Progress Steps */}
+          <div className="mb-8 flex items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => setStep("type")}
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                step === "type"
+                  ? "bg-primary text-primary-foreground shadow-lg"
+                  : "bg-secondary text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-foreground/20 text-xs">
+                1
+              </span>
+              Type
+            </button>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            <button
+              type="button"
+              onClick={() => canProceedToDetails && setStep("details")}
+              disabled={!canProceedToDetails}
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                step === "details"
+                  ? "bg-primary text-primary-foreground shadow-lg"
+                  : !canProceedToDetails
+                  ? "bg-secondary/50 text-muted-foreground/50 cursor-not-allowed"
+                  : "bg-secondary text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-foreground/20 text-xs">
+                2
+              </span>
+              Details
+            </button>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            <button
+              type="button"
+              onClick={() => canProceedToContent && setStep("content")}
+              disabled={!canProceedToContent}
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                step === "content"
+                  ? "bg-primary text-primary-foreground shadow-lg"
+                  : !canProceedToContent
+                  ? "bg-secondary/50 text-muted-foreground/50 cursor-not-allowed"
+                  : "bg-secondary text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-foreground/20 text-xs">
+                3
+              </span>
+              Content
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit(onSubmit)}>
+            {step === "type" && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
+                  <CardHeader className="border-b border-border/50 bg-secondary/20">
+                    <CardTitle>Template Type</CardTitle>
+                    <CardDescription>
+                      Choose what kind of template you want to create
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => handleTypeChange("contract")}
+                        className={cn(
+                          "flex flex-col items-center gap-4 rounded-xl border p-6 transition-all text-center",
+                          selectedType === "contract"
+                            ? "border-primary bg-primary/5 ring-2 ring-primary/20 shadow-lg shadow-primary/10"
+                            : "border-border/50 bg-secondary/20 hover:border-border hover:bg-secondary/40"
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "flex h-16 w-16 items-center justify-center rounded-2xl transition-all",
+                            selectedType === "contract"
+                              ? "gradient-primary shadow-lg"
+                              : "bg-secondary"
+                          )}
+                        >
+                          <FileText
+                            className={cn(
+                              "h-8 w-8",
+                              selectedType === "contract" ? "text-white" : "text-muted-foreground"
+                            )}
+                          />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold">Contract Template</h3>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            Legal agreements, service contracts, NDAs
+                          </p>
+                        </div>
+                        {selectedType === "contract" && (
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary">
+                            <Check className="h-4 w-4 text-primary-foreground" />
+                          </div>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleTypeChange("invoice")}
+                        className={cn(
+                          "flex flex-col items-center gap-4 rounded-xl border p-6 transition-all text-center",
+                          selectedType === "invoice"
+                            ? "border-primary bg-primary/5 ring-2 ring-primary/20 shadow-lg shadow-primary/10"
+                            : "border-border/50 bg-secondary/20 hover:border-border hover:bg-secondary/40"
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "flex h-16 w-16 items-center justify-center rounded-2xl transition-all",
+                            selectedType === "invoice"
+                              ? "gradient-primary shadow-lg"
+                              : "bg-secondary"
+                          )}
+                        >
+                          <Receipt
+                            className={cn(
+                              "h-8 w-8",
+                              selectedType === "invoice" ? "text-white" : "text-muted-foreground"
+                            )}
+                          />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold">Invoice Template</h3>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            Billing documents, payment requests
+                          </p>
+                        </div>
+                        {selectedType === "invoice" && (
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary">
+                            <Check className="h-4 w-4 text-primary-foreground" />
+                          </div>
+                        )}
+                      </button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={() => setStep("details")}
+                    className="gradient-primary border-0 min-w-35"
+                  >
+                    Continue
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {step === "details" && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
+                  <CardHeader className="border-b border-border/50 bg-secondary/20">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-xl gradient-primary">
+                        <TypeIcon className="h-6 w-6 text-white" />
                       </div>
                       <div>
-                        <p className="font-medium">Contract</p>
-                        <p className="text-xs text-muted-foreground">Legal agreements</p>
+                        <CardTitle>Template Details</CardTitle>
+                        <CardDescription>
+                          {selectedType === "contract" ? "Contract" : "Invoice"} template
+                        </CardDescription>
                       </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleTypeChange("invoice")}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg border p-4 transition-all text-left",
-                        selectedType === "invoice"
-                          ? "border-primary bg-primary/10"
-                          : "border-border/50 hover:border-border hover:bg-secondary/50"
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-6 space-y-4">
+                    {/* Name */}
+                    <div className="space-y-2">
+                      <Label htmlFor="name">
+                        Template Name <span className="text-destructive">*</span>
+                      </Label>
+                      <div className="relative">
+                        <FileSignature className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          id="name"
+                          placeholder={
+                            selectedType === "contract"
+                              ? "e.g., Web Development Agreement"
+                              : "e.g., Standard Invoice"
+                          }
+                          className={cn("pl-9", errors.name && "border-destructive")}
+                          {...register("name")}
+                        />
+                      </div>
+                      {errors.name && (
+                        <p className="text-sm text-destructive">{errors.name.message}</p>
                       )}
-                    >
-                      <div className={cn(
-                        "flex h-10 w-10 items-center justify-center rounded-lg",
-                        selectedType === "invoice" ? "gradient-primary" : "bg-secondary"
-                      )}>
-                        <Receipt className={cn(
-                          "h-5 w-5",
-                          selectedType === "invoice" ? "text-white" : "text-muted-foreground"
-                        )} />
+                    </div>
+
+                    {/* Description */}
+                    <div className="space-y-2">
+                      <Label htmlFor="description">Description</Label>
+                      <Input
+                        id="description"
+                        placeholder="Brief description of when to use this template"
+                        {...register("description")}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Optional. Helps you remember what this template is for.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="flex items-center justify-between">
+                  <Button type="button" variant="ghost" onClick={() => setStep("type")}>
+                    <ArrowLeft className="h-4 w-4" />
+                    Back
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => setStep("content")}
+                    disabled={!canProceedToContent}
+                    className="gradient-primary border-0 min-w-35"
+                  >
+                    Continue
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {step === "content" && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                {/* Summary */}
+                <Card className="bg-card/50 backdrop-blur-sm">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-xl gradient-primary">
+                        <TypeIcon className="h-6 w-6 text-white" />
                       </div>
-                      <div>
-                        <p className="font-medium">Invoice</p>
-                        <p className="text-xs text-muted-foreground">Billing documents</p>
+                      <div className="flex-1">
+                        <h3 className="font-semibold">{watchName || "Untitled Template"}</h3>
+                        <p className="text-sm text-muted-foreground capitalize">
+                          {selectedType} Template
+                        </p>
                       </div>
-                    </button>
-                  </div>
-                </div>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setStep("details")}>
+                        Edit
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
 
-                {/* Name */}
-                <div className="space-y-2">
-                  <Label htmlFor="name">
-                    Template Name <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="name"
-                    placeholder="e.g., Web Development Agreement"
-                    {...register("name")}
-                    className={errors.name ? "border-destructive" : ""}
-                  />
-                  {errors.name && (
-                    <p className="text-sm text-destructive">{errors.name.message}</p>
-                  )}
-                </div>
+                {/* Content Editor */}
+                <div className="grid gap-6 lg:grid-cols-2">
+                  {/* Editor */}
+                  <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
+                    <CardHeader className="border-b border-border/50 bg-secondary/20 py-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <PenLine className="h-4 w-4" />
+                        Edit Template
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <textarea
+                        {...register("content")}
+                        rows={20}
+                        className="w-full min-h-112.5 p-4 font-mono text-sm bg-transparent border-0 resize-none focus:outline-none focus:ring-0"
+                        placeholder="Enter template content..."
+                      />
+                    </CardContent>
+                  </Card>
 
-                {/* Description */}
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Input
-                    id="description"
-                    placeholder="Brief description of when to use this template"
-                    {...register("description")}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Template Content */}
-            <Card className="bg-card/50 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle>Template Content</CardTitle>
-                <CardDescription>
-                  Use Markdown formatting. Variables like {"{{client_name}}"} will be replaced when used.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <Label htmlFor="content">
-                    Content <span className="text-destructive">*</span>
-                  </Label>
-                  <textarea
-                    id="content"
-                    {...register("content")}
-                    rows={20}
-                    className={cn(
-                      "flex w-full rounded-lg border bg-secondary/50 px-3 py-2 text-sm font-mono transition-colors placeholder:text-muted-foreground focus:border-primary/50 focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/20",
-                      errors.content ? "border-destructive" : "border-border/50"
-                    )}
-                  />
-                  {errors.content && (
-                    <p className="text-sm text-destructive">{errors.content.message}</p>
-                  )}
+                  {/* Preview */}
+                  <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
+                    <CardHeader className="border-b border-border/50 bg-secondary/20 py-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Eye className="h-4 w-4" />
+                        Preview
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4 max-h-112.5 overflow-auto">
+                      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">
+                        {watchContent}
+                      </pre>
+                    </CardContent>
+                  </Card>
                 </div>
 
                 {/* Variable Reference */}
-                <div className="mt-4 rounded-lg border border-border/50 bg-secondary/30 p-4">
-                  <p className="text-sm font-medium mb-2">Available Variables</p>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedType === "contract" ? (
-                      <>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{project_name}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{client_name}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{developer_name}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{date}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{start_date}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{end_date}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{total_amount}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{milestones}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{scope_description}}"}</code>
-                      </>
-                    ) : (
-                      <>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{invoice_number}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{client_name}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{client_company}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{invoice_date}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{due_date}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{line_items}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{subtotal}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{tax_rate}}"}</code>
-                        <code className="text-xs bg-secondary px-2 py-1 rounded">{"{{total}}"}</code>
-                      </>
-                    )}
+                <Card className="bg-card/50 backdrop-blur-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <Sparkles className="h-4 w-4" />
+                      Available Variables
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="flex flex-wrap gap-2">
+                      {selectedType === "contract" ? (
+                        <>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientName}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientEmail}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientCompany}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{businessName}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{projectName}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{projectDescription}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{totalAmount}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{milestones}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{date}}"}</code>
+                        </>
+                      ) : (
+                        <>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{invoiceNumber}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientName}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientCompany}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{businessName}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{invoiceDate}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{dueDate}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{lineItems}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{subtotal}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{taxRate}}"}</code>
+                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{total}}"}</code>
+                        </>
+                      )}
+                    </div>
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      These variables will be replaced with actual values when the template is used.
+                    </p>
+                  </CardContent>
+                </Card>
+
+                {/* Submit */}
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/50 p-4">
+                  <p className="text-sm text-muted-foreground">
+                    Your template will be saved and available for use immediately.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <Button type="button" variant="ghost" onClick={() => setStep("details")}>
+                      Back
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="gradient-primary border-0 min-w-40"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4" />
+                          Create Template
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Submit */}
-            <div className="flex items-center justify-end gap-3">
-              <Button type="button" variant="ghost" asChild>
-                <Link href="/dashboard/templates">Cancel</Link>
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="gradient-primary border-0"
-              >
-                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isSubmitting ? "Creating..." : "Create Template"}
-              </Button>
-            </div>
+              </div>
+            )}
           </form>
         </div>
       </div>
