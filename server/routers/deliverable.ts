@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { router, protectedProcedure, publicProcedure } from "../trpc";
-import { deliverables, projects, milestones } from "../db/schema";
+import { deliverables, projects } from "../db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { getPresignedUploadUrl, deleteFile, getKeyFromUrl } from "@/lib/storage";
 
 // Helper to format file size
 function formatFileSize(bytes: number): string {
@@ -137,7 +138,7 @@ export const deliverableRouter = router({
       };
     }),
 
-  // Get upload URL (presigned URL for direct upload to R2/S3)
+  // Get upload URL (presigned URL for direct upload to R2)
   getUploadUrl: protectedProcedure
     .input(
       z.object({
@@ -160,21 +161,26 @@ export const deliverableRouter = router({
         });
       }
 
-      // In production, generate a presigned URL for R2/S3
-      // For now, we'll simulate this
-      const fileKey = `deliverables/${project.id}/${Date.now()}-${input.fileName}`;
-      
-      // TODO: Replace with actual presigned URL generation
-      // const { url, key } = await generatePresignedUrl({
-      //   bucket: process.env.R2_BUCKET,
-      //   key: fileKey,
-      //   contentType: input.fileType,
-      //   expiresIn: 3600,
-      // });
+      // Validate file size (max 100MB)
+      const maxSize = 100 * 1024 * 1024; // 100MB
+      if (input.fileSize > maxSize) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "File size exceeds 100MB limit",
+        });
+      }
 
-      // For development, use a placeholder
-      const uploadUrl = `/api/upload?key=${encodeURIComponent(fileKey)}`;
-      const fileUrl = `https://files.devportal.app/${fileKey}`;
+      // Generate unique key for the file
+      const timestamp = Date.now();
+      const sanitizedFileName = input.fileName.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const fileKey = `deliverables/${project.id}/${timestamp}-${sanitizedFileName}`;
+
+      // Get presigned URL for direct upload to R2
+      const { uploadUrl, fileUrl } = await getPresignedUploadUrl({
+        key: fileKey,
+        contentType: input.fileType,
+        expiresIn: 3600, // 1 hour
+      });
 
       return {
         uploadUrl,
@@ -399,7 +405,18 @@ export const deliverableRouter = router({
         });
       }
 
-      // TODO: Delete file from R2/S3
+      // Delete file from R2 (skip for GitHub links)
+      if (existing.mimeType !== "application/x-github-repo") {
+        const fileKey = getKeyFromUrl(existing.fileUrl);
+        if (fileKey) {
+          try {
+            await deleteFile(fileKey);
+          } catch (error) {
+            console.error("[Deliverable] Failed to delete file from R2:", error);
+            // Continue anyway - don't block the database deletion
+          }
+        }
+      }
 
       await ctx.db.delete(deliverables).where(eq(deliverables.id, input.id));
 

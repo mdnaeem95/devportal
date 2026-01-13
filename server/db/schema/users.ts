@@ -15,6 +15,12 @@ export const users = pgTable("users", {
   stripeAccountId: text("stripe_account_id"),
   stripeConnected: boolean("stripe_connected").default(false),
   currency: text("currency").default("USD"),
+  
+  // Notification preferences
+  emailInvoicePaid: boolean("email_invoice_paid").default(true),
+  emailContractSigned: boolean("email_contract_signed").default(true),
+  emailWeeklyDigest: boolean("email_weekly_digest").default(false),
+  
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()

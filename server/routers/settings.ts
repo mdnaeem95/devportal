@@ -37,12 +37,10 @@ export const settingsRouter = router({
       currency: user.currency || "USD",
       logoUrl: user.logoUrl,
       stripeConnected: user.stripeConnected || false,
-      // Notification preferences - these could be in a separate table
-      // For now, return defaults (you can add these columns to users table later)
       notifications: {
-        emailInvoicePaid: true,
-        emailContractSigned: true,
-        emailWeeklyDigest: false,
+        emailInvoicePaid: user.emailInvoicePaid ?? true,
+        emailContractSigned: user.emailContractSigned ?? true,
+        emailWeeklyDigest: user.emailWeeklyDigest ?? false,
       },
     };
   }),
@@ -161,14 +159,28 @@ export const settingsRouter = router({
     }),
 
   // Update notification preferences
-  // Note: For MVP, these could just be stored in localStorage
-  // or you can add columns to the users table
   updateNotifications: protectedProcedure
     .input(updateNotificationsSchema)
     .mutation(async ({ ctx, input }) => {
-      // TODO: Add notification preference columns to users table
-      // For now, just return success
-      console.log("[Settings] Notification preferences:", input);
-      return { success: true };
+      const [updated] = await ctx.db
+        .update(users)
+        .set({
+          emailInvoicePaid: input.emailInvoicePaid,
+          emailContractSigned: input.emailContractSigned,
+          emailWeeklyDigest: input.emailWeeklyDigest,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, ctx.user.id))
+        .returning();
+
+      if (!updated) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+      }
+
+      return {
+        emailInvoicePaid: updated.emailInvoicePaid,
+        emailContractSigned: updated.emailContractSigned,
+        emailWeeklyDigest: updated.emailWeeklyDigest,
+      };
     }),
 });
