@@ -6,10 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { formatDate, cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { Loader2, Upload, File, FileCode, FileText, FileImage, FileArchive, FileJson, Figma, Github, Download,
-  Trash2, ExternalLink, Check, X, ChevronDown, Eye } from "lucide-react";
+  Trash2, ExternalLink, Check, X, ChevronDown, Eye, AlertTriangle } from "lucide-react";
 
 interface DeliverablesTabProps {
   projectId: string;
@@ -26,6 +28,12 @@ const categoryIcons: Record<string, React.ElementType> = {
   other: File,
 };
 
+interface DeleteTarget {
+  id: string;
+  name: string;
+  type: "file" | "github";
+}
+
 export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -35,6 +43,7 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
   const [selectedMilestone, setSelectedMilestone] = useState<string>("");
   const [versionNotes, setVersionNotes] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   const { data: deliverables, isLoading, refetch } = trpc.deliverable.list.useQuery({
     projectId,
@@ -43,25 +52,41 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
   const getUploadUrl = trpc.deliverable.getUploadUrl.useMutation();
   const createDeliverable = trpc.deliverable.create.useMutation({
     onSuccess: () => {
+      toast.success("File uploaded successfully!");
       refetch();
       setIsUploading(false);
       setUploadProgress(0);
       setVersionNotes("");
       setSelectedMilestone("");
     },
+    onError: (error) => {
+      toast.error(error.message || "Failed to upload file");
+      setIsUploading(false);
+      setUploadProgress(0);
+    },
   });
 
   const addGithubLink = trpc.deliverable.addGithubLink.useMutation({
     onSuccess: () => {
+      toast.success("GitHub repository linked!");
       refetch();
       setShowGithubForm(false);
       setGithubUrl("");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to link repository");
     },
   });
 
   const deleteDeliverable = trpc.deliverable.delete.useMutation({
     onSuccess: () => {
+      toast.success(deleteTarget?.type === "github" ? "Repository unlinked" : "File deleted");
       refetch();
+      setDeletingId(null);
+      setDeleteTarget(null);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to delete");
       setDeletingId(null);
     },
   });
@@ -121,10 +146,37 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
     });
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Are you sure you want to delete this file?")) {
-      setDeletingId(id);
-      await deleteDeliverable.mutateAsync({ id });
+  const openDeleteDialog = (id: string, name: string, type: "file" | "github") => {
+    setDeleteTarget({ id, name, type });
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeletingId(deleteTarget.id);
+    await deleteDeliverable.mutateAsync({ id: deleteTarget.id });
+  };
+
+  const handleDownload = async (fileUrl: string, fileName: string) => {
+    try {
+      // For R2/S3 URLs, we need to fetch and create a blob
+      // This handles CORS and provides a proper download experience
+      const response = await fetch(fileUrl);
+      if (!response.ok) {
+        throw new Error("Download failed");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      // Fallback: open in new tab
+      window.open(fileUrl, "_blank");
+      toast.error("Direct download failed. File opened in new tab.");
     }
   };
 
@@ -142,6 +194,7 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
             <Button
               variant="outline"
               size="sm"
+              className="cursor-pointer hover:bg-secondary hover:border-border transition-colors"
               onClick={() => setShowGithubForm(!showGithubForm)}
             >
               <Github className="h-4 w-4" />
@@ -152,7 +205,7 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
         <CardContent className="space-y-4">
           {/* GitHub Link Form */}
           {showGithubForm && (
-            <div className="flex gap-2 p-4 rounded-lg border border-border/50 bg-secondary/30">
+            <div className="flex gap-2 p-4 rounded-lg border border-border/50 bg-secondary/30 animate-in fade-in slide-in-from-top-2 duration-200">
               <Input
                 placeholder="https://github.com/username/repo"
                 value={githubUrl}
@@ -160,6 +213,7 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
                 className="flex-1"
               />
               <Button
+                className="cursor-pointer transition-all hover:shadow-md"
                 onClick={handleAddGithub}
                 disabled={!githubUrl || addGithubLink.isPending}
               >
@@ -170,7 +224,11 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
                 )}
                 Add
               </Button>
-              <Button variant="ghost" onClick={() => setShowGithubForm(false)}>
+              <Button 
+                variant="ghost" 
+                className="cursor-pointer hover:bg-secondary transition-colors"
+                onClick={() => setShowGithubForm(false)}
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -186,7 +244,7 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
                   <select
                     value={selectedMilestone}
                     onChange={(e) => setSelectedMilestone(e.target.value)}
-                    className="flex h-9 w-full appearance-none rounded-lg border border-border/50 bg-secondary/50 px-3 py-1 text-sm transition-colors focus:border-primary/50 focus:outline-none"
+                    className="flex h-9 w-full cursor-pointer appearance-none rounded-lg border border-border/50 bg-secondary/50 px-3 py-1 text-sm transition-colors focus:border-primary/50 focus:outline-none hover:bg-secondary"
                   >
                     <option value="">No milestone</option>
                     {milestones.map((m) => (
@@ -212,7 +270,7 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
             {/* Upload Area */}
             <div
               className={cn(
-                "relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors",
+                "relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors cursor-pointer",
                 isUploading
                   ? "border-primary/50 bg-primary/5"
                   : "border-border/50 hover:border-primary/30 hover:bg-secondary/30"
@@ -264,13 +322,14 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {githubRepos.map((repo) => (
+              {githubRepos.map((repo, index) => (
                 <div
                   key={repo.id}
-                  className="flex items-center justify-between rounded-lg border border-border/50 p-3"
+                  className="flex items-center justify-between rounded-lg border border-border/50 p-3 group transition-all hover:bg-secondary/30 hover:border-border animate-in fade-in slide-in-from-bottom-2 duration-300"
+                  style={{ animationDelay: `${index * 50}ms`, animationFillMode: "backwards" }}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary transition-transform group-hover:scale-105">
                       <Github className="h-5 w-5" />
                     </div>
                     <div>
@@ -291,8 +350,8 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-destructive hover:bg-destructive/10"
-                    onClick={() => handleDelete(repo.id)}
+                    className="cursor-pointer text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all"
+                    onClick={() => openDeleteDialog(repo.id, repo.fileName, "github")}
                     disabled={deletingId === repo.id}
                   >
                     {deletingId === repo.id ? (
@@ -341,15 +400,16 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
             </div>
           ) : (
             <div className="space-y-2">
-              {files.map((file) => {
+              {files.map((file, index) => {
                 const Icon = categoryIcons[file.category] || File;
                 return (
                   <div
                     key={file.id}
-                    className="flex items-center justify-between rounded-lg border border-border/50 p-3 group"
+                    className="flex items-center justify-between rounded-lg border border-border/50 p-3 group transition-all hover:bg-secondary/30 hover:border-border animate-in fade-in slide-in-from-bottom-2 duration-300"
+                    style={{ animationDelay: `${index * 50}ms`, animationFillMode: "backwards" }}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary shrink-0">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary shrink-0 transition-transform group-hover:scale-105">
                         <Icon className="h-5 w-5 text-muted-foreground" />
                       </div>
                       <div className="min-w-0">
@@ -390,17 +450,16 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
                       <Button
                         variant="ghost"
                         size="sm"
-                        asChild
+                        className="cursor-pointer hover:bg-secondary transition-colors"
+                        onClick={() => handleDownload(file.fileUrl, file.fileName)}
                       >
-                        <a href={file.fileUrl} download={file.fileName}>
-                          <Download className="h-4 w-4" />
-                        </a>
+                        <Download className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => handleDelete(file.id)}
+                        className="cursor-pointer text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all"
+                        onClick={() => openDeleteDialog(file.id, file.fileName, "file")}
                         disabled={deletingId === file.id}
                       >
                         {deletingId === file.id ? (
@@ -417,6 +476,58 @@ export function DeliverablesTab({ projectId, milestones = [] }: DeliverablesTabP
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              {deleteTarget?.type === "github" ? "Unlink Repository" : "Delete File"}
+            </DialogTitle>
+            <DialogDescription>
+              {deleteTarget?.type === "github" ? (
+                <>
+                  Are you sure you want to unlink <span className="font-medium text-foreground">"{deleteTarget?.name}"</span>? 
+                  This will only remove the link from this project, not the actual repository.
+                </>
+              ) : (
+                <>
+                  Are you sure you want to delete <span className="font-medium text-foreground">"{deleteTarget?.name}"</span>? 
+                  This action cannot be undone.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="ghost" 
+              className="cursor-pointer hover:bg-secondary transition-colors"
+              onClick={() => setDeleteTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="cursor-pointer transition-all hover:shadow-lg hover:shadow-destructive/25"
+              onClick={handleDelete}
+              disabled={deletingId === deleteTarget?.id}
+            >
+              {deletingId === deleteTarget?.id ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {deleteTarget?.type === "github" ? "Unlinking..." : "Deleting..."}
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  {deleteTarget?.type === "github" ? "Unlink" : "Delete"}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

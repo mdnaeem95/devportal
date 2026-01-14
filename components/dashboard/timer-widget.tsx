@@ -23,11 +23,13 @@ function formatTime(seconds: number): string {
   return `${minutes}:${secs.toString().padStart(2, "0")}`;
 }
 
+const NO_PROJECT = "_none_";
+
 export function TimerWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [description, setDescription] = useState("");
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(NO_PROJECT);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const utils = trpc.useUtils();
@@ -82,7 +84,7 @@ export function TimerWidget() {
       // Set initial elapsed time
       setElapsedSeconds(runningTimer.currentDuration);
       setDescription(runningTimer.description || "");
-      setSelectedProjectId(runningTimer.projectId || "");
+      setSelectedProjectId(runningTimer.projectId || NO_PROJECT);
 
       // Start interval
       intervalRef.current = setInterval(() => {
@@ -122,8 +124,9 @@ export function TimerWidget() {
   }, [runningTimer]);
 
   const handleStart = () => {
+    const projectId = selectedProjectId === NO_PROJECT ? undefined : selectedProjectId;
     startTimer.mutate({
-      projectId: selectedProjectId || undefined,
+      projectId,
       description: description || undefined,
       billable: true,
     });
@@ -172,8 +175,8 @@ export function TimerWidget() {
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80" align="end">
-        <div className="space-y-4">
+      <PopoverContent className="w-80 p-5" align="end">
+        <div className="space-y-5">
           <div className="flex items-center justify-between">
             <h4 className="font-semibold flex items-center gap-2">
               <Clock className="h-4 w-4" />
@@ -202,7 +205,7 @@ export function TimerWidget() {
           )}
 
           {/* Project Selection */}
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <Label htmlFor="project">Project (optional)</Label>
             <Select
               value={selectedProjectId}
@@ -213,7 +216,7 @@ export function TimerWidget() {
                 <SelectValue placeholder="Select a project..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No project</SelectItem>
+                <SelectItem value={NO_PROJECT}>No project</SelectItem>
                 {projects?.map((project) => (
                   <SelectItem key={project.id} value={project.id}>
                     {project.name}
@@ -224,7 +227,7 @@ export function TimerWidget() {
           </div>
 
           {/* Description */}
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <Label htmlFor="description">What are you working on?</Label>
             <Input
               id="description"
@@ -274,7 +277,7 @@ export function TimerWidget() {
           </div>
 
           {/* Keyboard shortcut hint */}
-          <p className="text-xs text-center text-muted-foreground">
+          <p className="text-xs text-center text-muted-foreground pt-1">
             Press <kbd className="px-1.5 py-0.5 bg-secondary rounded text-[10px]">⌘T</kbd> to {isTimerRunning ? "stop" : "start"} timer
           </p>
         </div>

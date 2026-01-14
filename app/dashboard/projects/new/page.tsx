@@ -11,31 +11,42 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/dashboard/skeleton";
 import { AnimatedCurrency } from "@/components/dashboard/animated-number";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Plus, Trash2, FolderKanban, DollarSign, Calendar, ChevronDown, Check,
-  Users, Sparkles } from "lucide-react";
+import { format } from "date-fns";
+import { ArrowLeft, Loader2, Plus, Trash2, FolderKanban, DollarSign, Calendar as CalendarIcon, ChevronDown, Check, Users, Sparkles, UserPlus } from "lucide-react";
 
 const projectSchema = z.object({
   name: z.string().min(1, "Project name is required"),
   description: z.string().optional(),
   clientId: z.string().min(1, "Please select a client"),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
+  startDate: z.date().optional(),
+  endDate: z.date().optional(),
   milestones: z.array(
     z.object({
       name: z.string().min(1, "Milestone name is required"),
       description: z.string().optional(),
       amount: z.number().min(0, "Amount must be positive"),
-      dueDate: z.string().optional(),
+      dueDate: z.date().optional(),
     })
   ).optional(),
 });
 
 type ProjectFormData = z.infer<typeof projectSchema>;
+
+const newClientSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  email: z.string().email("Invalid email"),
+  company: z.string().optional(),
+});
+
+type NewClientFormData = z.infer<typeof newClientSchema>;
 
 export default function NewProjectPage() {
   const router = useRouter();
@@ -43,7 +54,11 @@ export default function NewProjectPage() {
   const preselectedClientId = searchParams.get("client");
   
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isNewClientDialogOpen, setIsNewClientDialogOpen] = useState(false);
+  const [newClientForm, setNewClientForm] = useState<NewClientFormData>({ name: "", email: "", company: "" });
+  const [newClientErrors, setNewClientErrors] = useState<Partial<Record<keyof NewClientFormData, string>>>({});
 
+  const utils = trpc.useUtils();
   const { data: clients, isLoading: clientsLoading } = trpc.clients.list.useQuery();
 
   const {
@@ -58,7 +73,7 @@ export default function NewProjectPage() {
     defaultValues: {
       clientId: preselectedClientId || "",
       milestones: [
-        { name: "", description: "", amount: 0, dueDate: "" },
+        { name: "", description: "", amount: 0 },
       ],
     },
   });
@@ -77,6 +92,8 @@ export default function NewProjectPage() {
 
   const milestones = watch("milestones") || [];
   const selectedClientId = watch("clientId");
+  const startDate = watch("startDate");
+  const endDate = watch("endDate");
   const selectedClient = clients?.find((c) => c.id === selectedClientId);
   const totalAmount = milestones.reduce((sum, m) => sum + (m.amount || 0), 0);
 
@@ -94,6 +111,36 @@ export default function NewProjectPage() {
     },
   });
 
+  const createClient = trpc.clients.create.useMutation({
+    onSuccess: (client) => {
+      toast.success("Client created!");
+      utils.clients.list.invalidate();
+      setValue("clientId", client.id);
+      setIsNewClientDialogOpen(false);
+      setNewClientForm({ name: "", email: "", company: "" });
+      setNewClientErrors({});
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to create client");
+    },
+  });
+
+  const handleCreateClient = () => {
+    const result = newClientSchema.safeParse(newClientForm);
+    if (!result.success) {
+      const fieldErrors: Partial<Record<keyof NewClientFormData, string>> = {};
+      result.error.errors.forEach((err) => {
+        if (err.path[0]) {
+          fieldErrors[err.path[0] as keyof NewClientFormData] = err.message;
+        }
+      });
+      setNewClientErrors(fieldErrors);
+      return;
+    }
+    setNewClientErrors({});
+    createClient.mutate(result.data);
+  };
+
   const onSubmit = async (data: ProjectFormData) => {
     setIsSubmitting(true);
     
@@ -101,15 +148,15 @@ export default function NewProjectPage() {
       name: data.name,
       description: data.description,
       clientId: data.clientId,
-      startDate: data.startDate ? new Date(data.startDate) : undefined,
-      endDate: data.endDate ? new Date(data.endDate) : undefined,
+      startDate: data.startDate,
+      endDate: data.endDate,
       milestones: data.milestones
         ?.filter((m) => m.name.trim() !== "")
         .map((m) => ({
           name: m.name,
           description: m.description,
           amount: Math.round(m.amount * 100),
-          dueDate: m.dueDate ? new Date(m.dueDate) : undefined,
+          dueDate: m.dueDate,
         })),
     };
 
@@ -117,7 +164,7 @@ export default function NewProjectPage() {
   };
 
   const addMilestone = () => {
-    append({ name: "", description: "", amount: 0, dueDate: "" });
+    append({ name: "", description: "", amount: 0 });
   };
 
   return (
@@ -125,7 +172,7 @@ export default function NewProjectPage() {
       <Header
         title="New Project"
         action={
-          <Button variant="ghost" asChild>
+          <Button variant="ghost" className="cursor-pointer hover:bg-secondary" asChild>
             <Link href="/dashboard/projects">
               <ArrowLeft className="h-4 w-4" />
               Back
@@ -159,26 +206,37 @@ export default function NewProjectPage() {
                   {clientsLoading ? (
                     <Skeleton className="h-10 w-full" />
                   ) : (
-                    <div className="relative">
-                      <select
-                        id="clientId"
-                        {...register("clientId")}
-                        className={cn(
-                          "flex h-10 w-full appearance-none rounded-lg border bg-secondary/50 px-3 py-2 text-sm transition-all focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/20",
-                          errors.clientId
-                            ? "border-destructive focus:ring-destructive/20"
-                            : "border-border/50 focus:border-primary/50",
-                          selectedClientId && "border-primary/50 bg-primary/5"
-                        )}
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <select
+                          id="clientId"
+                          {...register("clientId")}
+                          className={cn(
+                            "flex h-10 w-full cursor-pointer appearance-none rounded-lg border bg-secondary/50 px-3 py-2 text-sm transition-all focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/20",
+                            errors.clientId
+                              ? "border-destructive focus:ring-destructive/20"
+                              : "border-border/50 focus:border-primary/50",
+                            selectedClientId && "border-primary/50 bg-primary/5"
+                          )}
+                        >
+                          <option value="">Select a client...</option>
+                          {clients?.map((client) => (
+                            <option key={client.id} value={client.id}>
+                              {client.name} {client.company ? `(${client.company})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="cursor-pointer shrink-0 hover:bg-primary/10 hover:border-primary/50 transition-colors"
+                        onClick={() => setIsNewClientDialogOpen(true)}
                       >
-                        <option value="">Select a client...</option>
-                        {clients?.map((client) => (
-                          <option key={client.id} value={client.id}>
-                            {client.name} {client.company ? `(${client.company})` : ""}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                        <UserPlus className="h-4 w-4" />
+                        <span className="hidden sm:inline">New Client</span>
+                      </Button>
                     </div>
                   )}
                   {errors.clientId && (
@@ -194,9 +252,13 @@ export default function NewProjectPage() {
                     <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm">
                       <Users className="h-4 w-4 text-muted-foreground" />
                       <span className="text-muted-foreground">No clients yet.</span>
-                      <Link href="/dashboard/clients/new" className="text-primary hover:underline font-medium">
+                      <button
+                        type="button"
+                        onClick={() => setIsNewClientDialogOpen(true)}
+                        className="text-primary hover:underline font-medium cursor-pointer"
+                      >
                         Add a client first →
-                      </Link>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -234,26 +296,62 @@ export default function NewProjectPage() {
                 {/* Dates */}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="startDate" className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <Label className="flex items-center gap-2">
+                      <CalendarIcon className="h-4 w-4 text-muted-foreground" />
                       Start Date
                     </Label>
-                    <Input
-                      id="startDate"
-                      type="date"
-                      {...register("startDate")}
-                    />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal cursor-pointer hover:bg-secondary transition-colors",
+                            !startDate && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {startDate ? format(startDate, "PPP") : "Pick a date"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={startDate}
+                          onSelect={(date) => setValue("startDate", date)}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="endDate" className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <Label className="flex items-center gap-2">
+                      <CalendarIcon className="h-4 w-4 text-muted-foreground" />
                       End Date
                     </Label>
-                    <Input
-                      id="endDate"
-                      type="date"
-                      {...register("endDate")}
-                    />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal cursor-pointer hover:bg-secondary transition-colors",
+                            !endDate && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {endDate ? format(endDate, "PPP") : "Pick a date"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={endDate}
+                          onSelect={(date) => setValue("endDate", date)}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
               </CardContent>
@@ -355,10 +453,31 @@ export default function NewProjectPage() {
                             <Label className="text-xs text-muted-foreground">
                               Due Date
                             </Label>
-                            <Input
-                              type="date"
-                              {...register(`milestones.${index}.dueDate`)}
-                            />
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className={cn(
+                                    "w-full justify-start text-left font-normal cursor-pointer hover:bg-secondary transition-colors h-10",
+                                    !milestones[index]?.dueDate && "text-muted-foreground"
+                                  )}
+                                >
+                                  <CalendarIcon className="mr-2 h-4 w-4" />
+                                  {milestones[index]?.dueDate 
+                                    ? format(milestones[index].dueDate!, "PPP") 
+                                    : "Pick a date"}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                  mode="single"
+                                  selected={milestones[index]?.dueDate}
+                                  onSelect={(date) => setValue(`milestones.${index}.dueDate`, date)}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
                           </div>
                         </div>
                       </div>
@@ -367,7 +486,7 @@ export default function NewProjectPage() {
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10"
+                          className="h-8 w-8 cursor-pointer text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10"
                           onClick={() => remove(index)}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -380,7 +499,7 @@ export default function NewProjectPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full border-dashed hover:border-primary hover:bg-primary/5 transition-colors"
+                  className="w-full cursor-pointer border-dashed hover:border-primary hover:bg-primary/5 transition-colors"
                   onClick={addMilestone}
                 >
                   <Plus className="h-4 w-4" />
@@ -407,13 +526,18 @@ export default function NewProjectPage() {
                 )}
               </div>
               <div className="flex items-center gap-3">
-                <Button type="button" variant="ghost" asChild>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  className="cursor-pointer hover:bg-secondary transition-colors"
+                  asChild
+                >
                   <Link href="/dashboard/projects">Cancel</Link>
                 </Button>
                 <Button
                   type="submit"
                   disabled={isSubmitting || clientsLoading}
-                  className="gradient-primary border-0 min-w-35"
+                  className="cursor-pointer gradient-primary border-0 min-w-35 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
                 >
                   {isSubmitting ? (
                     <>
@@ -432,6 +556,89 @@ export default function NewProjectPage() {
           </form>
         </div>
       </div>
+
+      {/* New Client Dialog */}
+      <Dialog open={isNewClientDialogOpen} onOpenChange={setIsNewClientDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Add New Client
+            </DialogTitle>
+            <DialogDescription>
+              Create a new client to associate with this project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="client-name">
+                Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="client-name"
+                placeholder="Client name"
+                value={newClientForm.name}
+                onChange={(e) => setNewClientForm({ ...newClientForm, name: e.target.value })}
+                className={cn(newClientErrors.name && "border-destructive")}
+              />
+              {newClientErrors.name && (
+                <p className="text-sm text-destructive">{newClientErrors.name}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="client-email">
+                Email <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="client-email"
+                type="email"
+                placeholder="client@example.com"
+                value={newClientForm.email}
+                onChange={(e) => setNewClientForm({ ...newClientForm, email: e.target.value })}
+                className={cn(newClientErrors.email && "border-destructive")}
+              />
+              {newClientErrors.email && (
+                <p className="text-sm text-destructive">{newClientErrors.email}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="client-company">Company</Label>
+              <Input
+                id="client-company"
+                placeholder="Company name (optional)"
+                value={newClientForm.company}
+                onChange={(e) => setNewClientForm({ ...newClientForm, company: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              className="cursor-pointer hover:bg-secondary transition-colors"
+              onClick={() => setIsNewClientDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateClient} 
+              disabled={createClient.isPending}
+              className="cursor-pointer transition-all hover:shadow-md"
+            >
+              {createClient.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4" />
+                  Create Client
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

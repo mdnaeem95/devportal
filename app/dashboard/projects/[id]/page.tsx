@@ -20,7 +20,8 @@ import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, ExternalLink, Copy, Check, FileText, CreditCard, Package, Clock,
   CheckCircle2, Circle, Plus, Receipt, Send, Eye, XCircle, ArrowUpRight, Calendar, DollarSign,
-  Target, User, Pencil, Trash2, AlertTriangle, FolderOpen, Settings } from "lucide-react";
+  Target, User, Pencil, Trash2, AlertTriangle, FolderOpen, Settings, Copy as CopyIcon } from "lucide-react";
+import { MilestonesTab } from "@/components/projects/milestones-tab";
 
 type TabId = "overview" | "milestones" | "contract" | "invoices" | "deliverables";
 
@@ -96,6 +97,7 @@ export default function ProjectDetailPage() {
   const [creatingInvoice, setCreatingInvoice] = useState<string | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [editName, setEditName] = useState("");
   const [editStatus, setEditStatus] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -128,6 +130,23 @@ export default function ProjectDetailPage() {
     },
   });
 
+  const duplicateProject = trpc.project.duplicate.useMutation({
+    onSuccess: (newProject) => {
+      toast.success("Project duplicated!");
+      setIsDuplicating(false);
+      router.push(`/dashboard/projects/${newProject.id}`);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to duplicate project");
+      setIsDuplicating(false);
+    },
+  });
+
+  const handleDuplicate = () => {
+    setIsDuplicating(true);
+    duplicateProject.mutate({ id: projectId });
+  };
+
   const createInvoiceFromMilestone = trpc.invoice.createFromMilestone.useMutation({
     onSuccess: (invoice) => {
       toast.success("Invoice created!");
@@ -146,7 +165,7 @@ export default function ProjectDetailPage() {
 
   const copyPublicLink = () => {
     if (project) {
-      const url = `${window.location.origin}/p/${project.publicId}`;
+      const url = `${window.location.origin}/public/project/${project.publicId}`;
       navigator.clipboard.writeText(url);
       setCopied(true);
       toast.success("Link copied to clipboard!");
@@ -203,7 +222,7 @@ export default function ProjectDetailPage() {
               <p className="mt-2 text-muted-foreground">
                 This project doesn't exist or was deleted.
               </p>
-              <Button className="mt-6" asChild>
+              <Button className="mt-6 cursor-pointer" asChild>
                 <Link href="/dashboard/projects">Back to Projects</Link>
               </Button>
             </CardContent>
@@ -235,21 +254,34 @@ export default function ProjectDetailPage() {
         onSearchClick={() => setCommandOpen(true)}
         action={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" asChild>
+            <Button variant="ghost" className="cursor-pointer hover:bg-secondary transition-colors" asChild>
               <Link href="/dashboard/projects">
                 <ArrowLeft className="h-4 w-4" />
                 Back
               </Link>
             </Button>
-            <Button variant="outline" onClick={openEditDialog}>
+            <Button variant="outline" className="cursor-pointer hover:bg-secondary hover:border-border transition-colors" onClick={openEditDialog}>
               <Pencil className="h-4 w-4" />
               Edit
             </Button>
-            <Button variant="outline" onClick={copyPublicLink}>
+            <Button 
+              variant="outline" 
+              className="cursor-pointer hover:bg-secondary hover:border-border transition-colors" 
+              onClick={handleDuplicate}
+              disabled={isDuplicating}
+            >
+              {isDuplicating ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CopyIcon className="h-4 w-4" />
+              )}
+              {isDuplicating ? "Duplicating..." : "Duplicate"}
+            </Button>
+            <Button variant="outline" className="cursor-pointer hover:bg-secondary hover:border-border transition-colors" onClick={copyPublicLink}>
               {copied ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
               {copied ? "Copied!" : "Share"}
             </Button>
-            <Button variant="outline" asChild>
+            <Button variant="outline" className="cursor-pointer hover:bg-secondary hover:border-border transition-colors" asChild>
               <Link href={`/public/project/${project.publicId}`} target="_blank">
                 <ExternalLink className="h-4 w-4" />
                 Preview
@@ -293,7 +325,7 @@ export default function ProjectDetailPage() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative",
+                  "flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative",
                   activeTab === tab.id ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -410,6 +442,108 @@ export default function ProjectDetailPage() {
                 </CardContent>
               </Card>
 
+              {/* Revenue Summary Card */}
+              <Card className="bg-card/50 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: "200ms" }}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-green-400" />
+                    Revenue Summary
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const totalValue = project.totalAmount ?? 0;
+                    const outstanding = totalInvoiced - totalPaid;
+                    const remainingToInvoice = Math.max(0, totalValue - totalInvoiced);
+                    
+                    return (
+                      <div className="space-y-4">
+                        {/* Visual Progress Bar */}
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>Revenue Progress</span>
+                            <span>{totalValue > 0 ? Math.round((totalPaid / totalValue) * 100) : 0}% collected</span>
+                          </div>
+                          <div className="h-4 rounded-full bg-secondary overflow-hidden flex">
+                            {/* Paid (green) */}
+                            {totalValue > 0 && totalPaid > 0 && (
+                              <div 
+                                className="h-full bg-green-500 transition-all duration-500"
+                                style={{ width: `${(totalPaid / totalValue) * 100}%` }}
+                                title={`Paid: $${(totalPaid / 100).toLocaleString()}`}
+                              />
+                            )}
+                            {/* Outstanding (yellow) */}
+                            {totalValue > 0 && outstanding > 0 && (
+                              <div 
+                                className="h-full bg-yellow-500 transition-all duration-500"
+                                style={{ width: `${(outstanding / totalValue) * 100}%` }}
+                                title={`Outstanding: $${(outstanding / 100).toLocaleString()}`}
+                              />
+                            )}
+                            {/* Remaining to invoice (gray) */}
+                            {totalValue > 0 && remainingToInvoice > 0 && (
+                              <div 
+                                className="h-full bg-muted-foreground/20 transition-all duration-500"
+                                style={{ width: `${(remainingToInvoice / totalValue) * 100}%` }}
+                                title={`Not invoiced: $${(remainingToInvoice / 100).toLocaleString()}`}
+                              />
+                            )}
+                          </div>
+                          {/* Legend */}
+                          <div className="flex items-center gap-4 text-xs">
+                            <div className="flex items-center gap-1.5">
+                              <div className="h-2 w-2 rounded-full bg-green-500" />
+                              <span className="text-muted-foreground">Paid</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <div className="h-2 w-2 rounded-full bg-yellow-500" />
+                              <span className="text-muted-foreground">Outstanding</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <div className="h-2 w-2 rounded-full bg-muted-foreground/30" />
+                              <span className="text-muted-foreground">Not Invoiced</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Detailed Breakdown */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-3 border-t border-border/50">
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">Project Value</p>
+                            <p className="font-semibold">{formatCurrency(totalValue)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">Invoiced</p>
+                            <p className="font-semibold">{formatCurrency(totalInvoiced)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">Collected</p>
+                            <p className="font-semibold text-green-400">{formatCurrency(totalPaid)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">Outstanding</p>
+                            <p className={cn("font-semibold", outstanding > 0 ? "text-yellow-400" : "text-muted-foreground")}>
+                              {formatCurrency(outstanding)}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Remaining to Invoice Alert */}
+                        {remainingToInvoice > 0 && (
+                          <div className="flex items-center gap-2 rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm">
+                            <Receipt className="h-4 w-4 text-primary shrink-0" />
+                            <p className="text-muted-foreground">
+                              <span className="font-medium text-foreground">{formatCurrency(remainingToInvoice)}</span> remaining to invoice
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+
               {/* Project Details */}
               <div className="grid gap-6 lg:grid-cols-2">
                 {/* Description */}
@@ -499,7 +633,7 @@ export default function ProjectDetailPage() {
                 <CardContent>
                   <Button
                     variant="outline"
-                    className="text-destructive hover:bg-destructive/10"
+                    className="cursor-pointer text-destructive hover:bg-destructive/10 hover:border-destructive/50 transition-colors"
                     onClick={() => setShowDeleteDialog(true)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -512,92 +646,10 @@ export default function ProjectDetailPage() {
 
           {activeTab === "milestones" && (
             <div className="mx-auto max-w-4xl animate-in fade-in duration-300">
-              <Card className="bg-card/50 backdrop-blur-sm">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-base">Milestones</CardTitle>
-                      <CardDescription>
-                        {completedMilestones} of {totalMilestones} completed
-                      </CardDescription>
-                    </div>
-                    {/* Future: Add milestone button */}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {project.milestones?.length === 0 ? (
-                    <div className="py-12 text-center">
-                      <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-2xl bg-secondary">
-                        <Target className="h-8 w-8 text-muted-foreground" />
-                      </div>
-                      <h3 className="mt-6 font-semibold">No milestones yet</h3>
-                      <p className="mt-2 text-sm text-muted-foreground max-w-xs mx-auto">
-                        Milestones help you break down the project into billable deliverables.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {project.milestones?.map((milestone, index) => {
-                        const msStatus = milestoneStatusConfig[milestone.status];
-                        const MsIcon = msStatus.icon;
-                        return (
-                          <div
-                            key={milestone.id}
-                            className="flex items-start gap-4 rounded-lg border border-border/50 p-4 transition-all hover:bg-secondary/30 hover:border-border animate-in fade-in slide-in-from-bottom-2 duration-300"
-                            style={{ animationDelay: `${index * 50}ms`, animationFillMode: "backwards" }}
-                          >
-                            <div className={cn("flex h-10 w-10 items-center justify-center rounded-lg", msStatus.bg)}>
-                              <MsIcon className={cn("h-5 w-5", msStatus.color)} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-4">
-                                <div>
-                                  <p className="font-medium">{milestone.name}</p>
-                                  {milestone.description && (
-                                    <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
-                                      {milestone.description}
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <p className="font-semibold">{formatCurrency(milestone.amount)}</p>
-                                  {milestone.dueDate && (
-                                    <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
-                                      <Calendar className="h-3 w-3" />
-                                      {formatDate(milestone.dueDate)}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="mt-3 flex items-center gap-2">
-                                <Badge variant="secondary" className="text-xs">
-                                  {msStatus.label}
-                                </Badge>
-                                {msStatus.canInvoice && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 text-xs"
-                                    onClick={() => handleCreateInvoice(milestone.id)}
-                                    disabled={creatingInvoice === milestone.id}
-                                  >
-                                    {creatingInvoice === milestone.id ? (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
-                                    ) : (
-                                      <Receipt className="h-3 w-3" />
-                                    )}
-                                    Create Invoice
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              <MilestonesTab 
+                projectId={project.id}
+                milestones={project.milestones || []}
+              />
             </div>
           )}
 
@@ -607,7 +659,7 @@ export default function ProjectDetailPage() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">Contracts</CardTitle>
-                    <Button size="sm" className="gradient-primary border-0" asChild>
+                    <Button size="sm" className="cursor-pointer gradient-primary border-0 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5" asChild>
                       <Link href={`/dashboard/contracts/new?project=${project.id}&client=${project.clientId}`}>
                         <Plus className="h-4 w-4" />
                         New Contract
@@ -625,7 +677,7 @@ export default function ProjectDetailPage() {
                       <p className="mt-2 text-sm text-muted-foreground max-w-xs mx-auto">
                         Create a contract to protect your work with legal agreements.
                       </p>
-                      <Button variant="outline" className="mt-6" asChild>
+                      <Button variant="outline" className="mt-6 cursor-pointer hover:bg-primary/10 hover:border-primary/50 transition-colors" asChild>
                         <Link href={`/dashboard/contracts/new?project=${project.id}&client=${project.clientId}`}>
                           <Plus className="h-4 w-4" />
                           Create Contract
@@ -691,7 +743,7 @@ export default function ProjectDetailPage() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">Invoices</CardTitle>
-                    <Button size="sm" className="gradient-primary border-0" asChild>
+                    <Button size="sm" className="cursor-pointer gradient-primary border-0 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5" asChild>
                       <Link href={`/dashboard/invoices/new?project=${project.id}&client=${project.clientId}`}>
                         <Plus className="h-4 w-4" />
                         New Invoice
@@ -796,15 +848,15 @@ export default function ProjectDetailPage() {
             <div className="space-y-2">
               <Label htmlFor="status">Status</Label>
               <Select value={editStatus} onValueChange={setEditStatus}>
-                <SelectTrigger>
+                <SelectTrigger className="cursor-pointer">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="on_hold">On Hold</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="draft" className="cursor-pointer">Draft</SelectItem>
+                  <SelectItem value="active" className="cursor-pointer">Active</SelectItem>
+                  <SelectItem value="on_hold" className="cursor-pointer">On Hold</SelectItem>
+                  <SelectItem value="completed" className="cursor-pointer">Completed</SelectItem>
+                  <SelectItem value="cancelled" className="cursor-pointer">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -820,13 +872,17 @@ export default function ProjectDetailPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setShowEditDialog(false)}>
+            <Button 
+              variant="ghost" 
+              className="cursor-pointer hover:bg-secondary transition-colors"
+              onClick={() => setShowEditDialog(false)}
+            >
               Cancel
             </Button>
             <Button
               onClick={handleUpdate}
               disabled={updateProject.isPending}
-              className="gradient-primary border-0"
+              className="cursor-pointer gradient-primary border-0 transition-all hover:shadow-lg hover:shadow-primary/25"
             >
               {updateProject.isPending ? (
                 <>
@@ -854,11 +910,16 @@ export default function ProjectDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setShowDeleteDialog(false)}>
+            <Button 
+              variant="ghost" 
+              className="cursor-pointer hover:bg-secondary transition-colors"
+              onClick={() => setShowDeleteDialog(false)}
+            >
               Cancel
             </Button>
             <Button
               variant="destructive"
+              className="cursor-pointer transition-all hover:shadow-lg hover:shadow-destructive/25"
               onClick={handleDelete}
               disabled={deleteProject.isPending}
             >

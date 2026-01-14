@@ -214,7 +214,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-hidden p-0 shadow-2xl sm:max-w-xl">
+      <DialogContent className="overflow-hidden p-0 shadow-2xl sm:max-w-xl [&>button]:hidden">
         {/* Search Input */}
         <div className="flex items-center border-b border-border/50 px-4">
           <Search className="h-4 w-4 text-muted-foreground" />
@@ -227,9 +227,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             className="flex-1 bg-transparent px-3 py-4 text-sm outline-none placeholder:text-muted-foreground"
           />
           {isLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-          <kbd className="hidden rounded bg-secondary px-2 py-1 text-xs text-muted-foreground sm:inline-block">
-            ESC
-          </kbd>
         </div>
 
         {/* Results */}

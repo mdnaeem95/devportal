@@ -13,7 +13,7 @@ const projectStatusSchema = z.enum([
 ]);
 
 export const projectRouter = router({
-  // List all projects for the current user
+  // List all projects for the current user (with milestone counts for progress)
   list: protectedProcedure
     .input(
       z
@@ -34,13 +34,46 @@ export const projectRouter = router({
         conditions.push(eq(projects.clientId, input.clientId));
       }
 
-      return ctx.db.query.projects.findMany({
+      const projectList = await ctx.db.query.projects.findMany({
         where: and(...conditions),
         with: {
           client: true,
         },
         orderBy: [desc(projects.createdAt)],
       });
+
+      // Get milestone counts for each project
+      const projectsWithProgress = await Promise.all(
+        projectList.map(async (project) => {
+          const projectMilestones = await ctx.db.query.milestones.findMany({
+            where: eq(milestones.projectId, project.id),
+          });
+
+          const totalMilestones = projectMilestones.length;
+          const completedMilestones = projectMilestones.filter((m) =>
+            ["completed", "invoiced", "paid"].includes(m.status)
+          ).length;
+
+          // Check for overdue milestones
+          const now = new Date();
+          const hasOverdue = projectMilestones.some(
+            (m) =>
+              m.dueDate &&
+              new Date(m.dueDate) < now &&
+              !["completed", "invoiced", "paid"].includes(m.status)
+          );
+
+          return {
+            ...project,
+            totalMilestones,
+            completedMilestones,
+            progress: totalMilestones > 0 ? (completedMilestones / totalMilestones) * 100 : 0,
+            hasOverdue,
+          };
+        })
+      );
+
+      return projectsWithProgress;
     }),
 
   // Get a single project by ID
@@ -181,6 +214,60 @@ export const projectRouter = router({
         .returning();
 
       return updated;
+    }),
+
+  // Duplicate a project
+  duplicate: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      // Get original project with milestones
+      const original = await ctx.db.query.projects.findFirst({
+        where: eq(projects.id, input.id),
+      });
+
+      if (!original || original.userId !== ctx.user.id) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Project not found",
+        });
+      }
+
+      // Get original milestones
+      const originalMilestones = await ctx.db.query.milestones.findMany({
+        where: eq(milestones.projectId, input.id),
+        orderBy: [asc(milestones.order)],
+      });
+
+      // Create new project with "(Copy)" suffix
+      const [newProject] = await ctx.db
+        .insert(projects)
+        .values({
+          userId: ctx.user.id,
+          clientId: original.clientId,
+          name: `${original.name} (Copy)`,
+          description: original.description,
+          status: "draft", // Always start as draft
+          totalAmount: original.totalAmount,
+          // Don't copy dates - user should set new dates
+        })
+        .returning();
+
+      // Duplicate milestones (reset status to pending)
+      if (originalMilestones.length > 0) {
+        await ctx.db.insert(milestones).values(
+          originalMilestones.map((m) => ({
+            projectId: newProject.id,
+            name: m.name,
+            description: m.description,
+            amount: m.amount,
+            status: "pending" as const, // Reset to pending
+            order: m.order,
+            // Don't copy due dates - user should set new dates
+          }))
+        );
+      }
+
+      return newProject;
     }),
 
   // Delete a project
