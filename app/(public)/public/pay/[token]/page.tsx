@@ -381,7 +381,7 @@ export default function PaymentPage() {
             <p>Invoice {invoice.invoiceNumber} for {invoice.client.name}</p>
             <div className="flex items-center gap-2">
               <span>Powered by</span>
-              <span className="font-medium text-foreground">DevPortal</span>
+              <span className="font-medium text-foreground">Zoho</span>
             </div>
           </div>
         </div>

@@ -4,12 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { LayoutDashboard, FolderKanban, Users, CreditCard, FileText, FileCode,
-  Settings, HelpCircle, Sparkles, ChevronRight } from "lucide-react";
+  Settings, HelpCircle, Sparkles, ChevronRight, 
+  Clock} from "lucide-react";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Projects", href: "/dashboard/projects", icon: FolderKanban },
   { name: "Clients", href: "/dashboard/clients", icon: Users },
+  { name: "Time Tracking", href: "/dashboard/time-tracking", icon: Clock },
   { name: "Contracts", href: "/dashboard/contracts", icon: FileText },
   { name: "Invoices", href: "/dashboard/invoices", icon: CreditCard },
   { name: "Templates", href: "/dashboard/templates", icon: FileCode },

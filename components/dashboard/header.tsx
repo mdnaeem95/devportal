@@ -3,6 +3,7 @@
 import { UserButton } from "@clerk/nextjs";
 import { Bell, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TimerWidget } from "./timer-widget";
 
 interface HeaderProps {
   title: string;
@@ -46,6 +47,9 @@ export function Header({ title, description, action, onSearchClick }: HeaderProp
         >
           <Search className="h-4 w-4" />
         </Button>
+
+        {/* Timer Widget - NEW */}
+        <TimerWidget />
 
         {action}
 

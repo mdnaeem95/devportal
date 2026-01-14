@@ -11,14 +11,16 @@ import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { Loader2, Building, CheckCircle2, Circle, Clock, FileText, CreditCard, Package, Lock, ExternalLink,
   Download, File, FileCode, FileImage, FileArchive, FileJson, Figma, Github } from "lucide-react";
 import { useParams } from "next/navigation";
+import { ClientTimeLog } from "@/components/public/client-time-log";
 
-type TabId = "overview" | "milestones" | "files" | "invoices";
+type TabId = "overview" | "milestones" | "files" | "invoices" | "time";
 
 const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "overview", label: "Overview", icon: Circle },
   { id: "milestones", label: "Milestones", icon: CheckCircle2 },
   { id: "files", label: "Files", icon: Package },
   { id: "invoices", label: "Invoices", icon: CreditCard },
+  { id: "time", label: "Time Log", icon: Clock }, // NEW TAB
 ];
 
 const statusConfig = {
@@ -60,6 +62,12 @@ export default function PublicProjectPage() {
   });
 
   const { data: deliverables } = trpc.deliverable.listPublic.useQuery(
+    { projectPublicId: publicId },
+    { enabled: !!project && !project.isLocked }
+  );
+
+  // Check if time logs are available for this project
+  const { data: timeLogData } = trpc.timeTracking.getClientVisible.useQuery(
     { projectPublicId: publicId },
     { enabled: !!project && !project.isLocked }
   );
@@ -158,6 +166,14 @@ export default function PublicProjectPage() {
 
   const projectInvoices = project.invoices ?? [];
 
+  // Filter tabs - only show "Time Log" if time data is available and visible
+  const visibleTabs = tabs.filter((tab) => {
+    if (tab.id === "time") {
+      return timeLogData && timeLogData.entries && timeLogData.entries.length > 0;
+    }
+    return true;
+  });
+
   return (
     <>
       {/* Header */}
@@ -192,7 +208,7 @@ export default function PublicProjectPage() {
         {/* Tabs */}
         <div className="mb-6 border-b border-border/50">
           <nav className="flex gap-1">
-            {tabs.map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -494,6 +510,11 @@ export default function PublicProjectPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* NEW: Time Log Tab */}
+        {activeTab === "time" && (
+          <ClientTimeLog projectPublicId={publicId} />
+        )}
       </main>
 
       {/* Footer */}
@@ -504,7 +525,7 @@ export default function PublicProjectPage() {
             <div className="flex items-center gap-2">
               <span>Powered by</span>
               <Link href="/" className="font-medium text-foreground hover:text-primary transition-colors">
-                DevPortal
+                Zovo
               </Link>
             </div>
           </div>

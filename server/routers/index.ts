@@ -8,6 +8,7 @@ import { contractRouter } from "./contract";
 import { deliverableRouter } from "./deliverable";
 import { stripeRouter } from "./stripe";
 import { settingsRouter } from "./settings";
+import { timeTrackingRouter } from "./time-tracking";
 
 export const appRouter = router({
   clients: clientRouter,
@@ -19,6 +20,7 @@ export const appRouter = router({
   deliverable: deliverableRouter,
   stripe: stripeRouter,
   settings: settingsRouter,
+  timeTracking: timeTrackingRouter
 });
 
 export type AppRouter = typeof appRouter;
