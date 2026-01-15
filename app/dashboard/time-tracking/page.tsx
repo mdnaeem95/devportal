@@ -161,7 +161,10 @@ export default function TimeTrackingPage() {
     }
 
     createManual.mutate({
-      projectId: manualForm.projectId || undefined,
+      projectId:
+        manualForm.projectId && manualForm.projectId !== "none"
+          ? manualForm.projectId
+          : undefined,
       description: manualForm.description,
       date: new Date(manualForm.date),
       duration: durationSeconds,
@@ -187,7 +190,7 @@ export default function TimeTrackingPage() {
           <div className="flex gap-2">
             <Dialog open={isManualDialogOpen} onOpenChange={setIsManualDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline">
+                <Button variant="outline" className="cursor-pointer">
                   <Plus className="h-4 w-4" />
                   Add Manual
                 </Button>
@@ -218,7 +221,7 @@ export default function TimeTrackingPage() {
                         <SelectValue placeholder="Select a project..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">No project</SelectItem>
+                        <SelectItem value="none">No project</SelectItem>
                         {projects?.map((p) => (
                           <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                         ))}
@@ -375,13 +378,13 @@ export default function TimeTrackingPage() {
         <div className="border-b border-border/50 bg-card/30 px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={() => navigateWeek("prev")}>
+              <Button className="cursor-pointer" variant="outline" size="icon" onClick={() => navigateWeek("prev")}>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <div className="text-sm font-medium px-4 py-2 bg-secondary rounded-md">
                 {format(selectedWeek, "MMM d")} - {format(weekEnd, "MMM d, yyyy")}
               </div>
-              <Button variant="outline" size="icon" onClick={() => navigateWeek("next")}>
+              <Button className="cursor-pointer" variant="outline" size="icon" onClick={() => navigateWeek("next")}>
                 <ChevronRight className="h-4 w-4" />
               </Button>
               <Button

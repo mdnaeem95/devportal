@@ -128,7 +128,7 @@ export default function ContractDetailPage() {
 
   const copySignLink = () => {
     if (contract?.signToken) {
-      const url = `${window.location.origin}/sign/${contract.signToken}`;
+      const url = `${window.location.origin}/public/sign/${contract.signToken}`;
       navigator.clipboard.writeText(url);
       setCopied(true);
       toast.success("Signing link copied!");
@@ -221,7 +221,7 @@ export default function ContractDetailPage() {
                   {copied ? "Copied!" : "Copy Link"}
                 </Button>
                 <Button variant="outline" asChild>
-                  <a href={`/sign/${contract.signToken}`} target="_blank" rel="noopener noreferrer">
+                  <a href={`/public/sign/${contract.signToken}`} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="h-4 w-4" />
                     Preview
                   </a>

@@ -234,7 +234,7 @@ export default function ContractsPage() {
                   key={tab.value}
                   onClick={() => setStatusFilter(tab.value)}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative whitespace-nowrap",
+                    "flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative whitespace-nowrap",
                     statusFilter === tab.value
                       ? "text-foreground"
                       : "text-muted-foreground hover:text-foreground"
