@@ -16,6 +16,7 @@ interface ContractSentEmailProps {
   expiresAt?: string;
   businessName?: string;
   businessLogo?: string;
+  developerSigned?: boolean; // NEW: Optional flag for sequential signing
 }
 
 export function ContractSentEmail({
@@ -28,6 +29,7 @@ export function ContractSentEmail({
   expiresAt,
   businessName,
   businessLogo,
+  developerSigned,
 }: ContractSentEmailProps) {
   return (
     <EmailLayout
@@ -42,6 +44,15 @@ export function ContractSentEmail({
       <Text style={styles.paragraph}>
         {developerName} has sent you a contract for your review and signature.
       </Text>
+
+      {/* NEW: Show if developer has already signed */}
+      {developerSigned && (
+        <Section style={developerSignedBadge}>
+          <Text style={developerSignedText}>
+            ✓ {developerName} has already signed this contract
+          </Text>
+        </Section>
+      )}
 
       <Section style={styles.card}>
         <Text style={styles.label}>Contract</Text>
@@ -79,6 +90,22 @@ export function ContractSentEmail({
     </EmailLayout>
   );
 }
+
+// Styles for developer signed badge
+const developerSignedBadge = {
+  backgroundColor: "#dcfce7",
+  borderRadius: "8px",
+  padding: "12px 16px",
+  marginBottom: "24px",
+};
+
+const developerSignedText = {
+  color: "#166534",
+  fontSize: "14px",
+  fontWeight: "600" as const,
+  margin: "0",
+  textAlign: "center" as const,
+};
 
 // ============================================
 // Contract Signed - To Client

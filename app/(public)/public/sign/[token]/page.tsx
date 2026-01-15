@@ -247,8 +247,46 @@ export default function ContractSigningPage() {
                     Contract Declined
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    This contract has been declined.
+                    Please contact {contract.business?.name} if you have questions.
                   </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ============================================ */}
+        {/* NEW: Developer Already Signed Banner */}
+        {/* ============================================ */}
+        {contract.developerSignature && !isSigned && !isDeclined && (
+          <Card className="mb-8 border-green-200 bg-green-50/50">
+            <CardContent className="py-4">
+              <div className="flex items-center gap-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 shrink-0">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-green-700">
+                    {contract.developerName || contract.business?.name} has already signed this contract
+                  </p>
+                  <p className="text-sm text-green-600/80">
+                    Signed on{" "}
+                    {contract.developerSignedAt
+                      ? new Date(contract.developerSignedAt).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        })
+                      : ""}
+                  </p>
+                </div>
+                {/* Show developer signature preview on larger screens */}
+                <div className="hidden sm:block rounded-lg border border-green-200 bg-white p-2">
+                  <img
+                    src={contract.developerSignature}
+                    alt="Developer signature"
+                    className="max-h-10 w-auto"
+                  />
                 </div>
               </div>
             </CardContent>
@@ -278,6 +316,13 @@ export default function ContractSigningPage() {
               <p className="text-sm text-muted-foreground">
                 {contract.business?.email}
               </p>
+              {/* Show signed status for developer */}
+              {contract.developerSignature && (
+                <Badge variant="outline" className="mt-2 border-green-300 text-green-600">
+                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                  Signed
+                </Badge>
+              )}
             </CardContent>
           </Card>
           <Card>
@@ -291,6 +336,13 @@ export default function ContractSigningPage() {
               <p className="text-sm text-muted-foreground">
                 {contract.client.email}
               </p>
+              {/* Show signed status for client */}
+              {isSigned && (
+                <Badge variant="outline" className="mt-2 border-green-300 text-green-600">
+                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                  Signed
+                </Badge>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -438,32 +490,62 @@ export default function ContractSigningPage() {
           </Card>
         )}
 
-        {/* Signature Display (for signed contracts) */}
-        {isSigned && contract.clientSignature && (
+        {/* Signatures Display (for signed contracts) */}
+        {isSigned && (
           <Card>
             <CardHeader>
-              <CardTitle>Signature</CardTitle>
+              <CardTitle>Signatures</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="rounded-lg border bg-secondary/50 p-6">
-                {contract.clientSignature.startsWith("data:image") ? (
-                  <img
-                    src={contract.clientSignature}
-                    alt="Signature"
-                    className="max-h-20"
-                  />
-                ) : (
-                  <p
-                    className="text-2xl"
-                    style={{ fontFamily: "cursive" }}
-                  >
-                    {contract.clientSignature}
-                  </p>
+              <div className="grid gap-6 sm:grid-cols-2">
+                {/* Developer Signature (if sequential signing was used) */}
+                {contract.developerSignature && (
+                  <div className="rounded-lg border bg-secondary/50 p-6">
+                    <p className="text-sm text-muted-foreground mb-2">
+                      {contract.developerName || contract.business?.name}
+                    </p>
+                    {contract.developerSignature.startsWith("data:image") ? (
+                      <img
+                        src={contract.developerSignature}
+                        alt="Developer Signature"
+                        className="max-h-16"
+                      />
+                    ) : (
+                      <p className="text-2xl" style={{ fontFamily: "cursive" }}>
+                        {contract.developerSignature}
+                      </p>
+                    )}
+                    <p className="mt-4 text-xs text-muted-foreground">
+                      Signed on{" "}
+                      {contract.developerSignedAt
+                        ? new Date(contract.developerSignedAt).toLocaleString()
+                        : ""}
+                    </p>
+                  </div>
                 )}
-                <p className="mt-4 text-sm text-muted-foreground">
-                  Signed by {contract.client.name} on{" "}
-                  {new Date(contract.signedAt!).toLocaleString()}
-                </p>
+
+                {/* Client Signature */}
+                {contract.clientSignature && (
+                  <div className="rounded-lg border bg-secondary/50 p-6">
+                    <p className="text-sm text-muted-foreground mb-2">
+                      {contract.client.name}
+                    </p>
+                    {contract.clientSignature.startsWith("data:image") ? (
+                      <img
+                        src={contract.clientSignature}
+                        alt="Client Signature"
+                        className="max-h-16"
+                      />
+                    ) : (
+                      <p className="text-2xl" style={{ fontFamily: "cursive" }}>
+                        {contract.clientSignature}
+                      </p>
+                    )}
+                    <p className="mt-4 text-xs text-muted-foreground">
+                      Signed on {new Date(contract.signedAt!).toLocaleString()}
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -475,7 +557,7 @@ export default function ContractSigningPage() {
         <div className="mx-auto max-w-4xl px-6 py-6">
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <p>Contract for {contract.client.name}</p>
-            <p>Powered by DevPortal</p>
+            <p>Powered by Zovo</p>
           </div>
         </div>
       </footer>

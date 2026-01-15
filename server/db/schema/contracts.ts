@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { nanoid } from "nanoid";
@@ -6,6 +6,7 @@ import { users } from "./users";
 import { clients } from "./clients";
 import { projects } from "./projects";
 import { templates } from "./templates";
+import { contractReminders } from "./contract-reminders";
 
 export const contractStatus = pgEnum("contract_status", [
   "draft",
@@ -45,18 +46,25 @@ export const contracts = pgTable("contracts", {
   clientIp: text("client_ip"),
   clientUserAgent: text("client_user_agent"),
   
-  // Developer signature (optional pre-sign)
+  // Developer signature (sequential signing)
   developerSignature: text("developer_signature"),
   developerSignedAt: timestamp("developer_signed_at"),
   
   // Generated PDF
   pdfUrl: text("pdf_url"),
   
+  // ============================================
+  // NEW: Reminder tracking fields
+  // ============================================
+  lastReminderAt: timestamp("last_reminder_at"),
+  reminderCount: integer("reminder_count").default(0).notNull(),
+  autoRemind: boolean("auto_remind").default(true).notNull(),
+  
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const contractsRelations = relations(contracts, ({ one }) => ({
+export const contractsRelations = relations(contracts, ({ one, many }) => ({
   user: one(users, {
     fields: [contracts.userId],
     references: [users.id],
@@ -73,4 +81,10 @@ export const contractsRelations = relations(contracts, ({ one }) => ({
     fields: [contracts.templateId],
     references: [templates.id],
   }),
+  // NEW: Relation to reminders
+  reminders: many(contractReminders),
 }));
+
+// Type exports
+export type Contract = typeof contracts.$inferSelect;
+export type NewContract = typeof contracts.$inferInsert;
