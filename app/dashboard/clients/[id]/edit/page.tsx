@@ -12,20 +12,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/dashboard/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { cn, getInitials } from "@/lib/utils";
 import { toast } from "sonner";
-import {
-  ArrowLeft,
-  Loader2,
-  Users,
-  Mail,
-  Building,
-  Phone,
-  MapPin,
-  FileText,
-  Check,
-} from "lucide-react";
+import { ArrowLeft, Loader2, Users, Mail, Building, Phone, MapPin, FileText, Check, UserCheck, UserX, UserPlus } from "lucide-react";
 
 const clientSchema = z.object({
   name: z.string().min(1, "Client name is required"),
@@ -34,15 +25,22 @@ const clientSchema = z.object({
   phone: z.string().optional(),
   address: z.string().optional(),
   notes: z.string().optional(),
+  status: z.enum(["active", "inactive", "lead"]),
 });
 
 type ClientFormData = z.infer<typeof clientSchema>;
+
+const statusOptions = [
+  { value: "active", label: "Active", icon: UserCheck, description: "Currently working with this client" },
+  { value: "lead", label: "Lead", icon: UserPlus, description: "Potential client, not yet converted" },
+  { value: "inactive", label: "Inactive", icon: UserX, description: "No longer active" },
+];
 
 export default function EditClientPage() {
   const router = useRouter();
   const params = useParams();
   const clientId = params.id as string;
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { data: client, isLoading } = trpc.clients.get.useQuery({ id: clientId });
@@ -52,6 +50,7 @@ export default function EditClientPage() {
     handleSubmit,
     watch,
     reset,
+    setValue,
     formState: { errors, isDirty },
   } = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),
@@ -62,6 +61,7 @@ export default function EditClientPage() {
       phone: "",
       address: "",
       notes: "",
+      status: "active",
     },
   });
 
@@ -75,12 +75,14 @@ export default function EditClientPage() {
         phone: client.phone || "",
         address: client.address || "",
         notes: client.notes || "",
+        status: (client.status as "active" | "inactive" | "lead") || "active",
       });
     }
   }, [client, reset]);
 
   const watchName = watch("name");
   const watchEmail = watch("email");
+  const watchStatus = watch("status");
 
   const utils = trpc.useUtils();
 
@@ -107,8 +109,11 @@ export default function EditClientPage() {
       phone: data.phone || undefined,
       address: data.address || undefined,
       notes: data.notes || undefined,
+      status: data.status,
     });
   };
+
+  const selectedStatus = statusOptions.find((s) => s.value === watchStatus);
 
   if (isLoading) {
     return (
@@ -167,9 +172,7 @@ export default function EditClientPage() {
                     {getInitials(watchName || client.name)}
                   </div>
                   <div>
-                    <p className="font-semibold text-lg">
-                      {watchName || client.name}
-                    </p>
+                    <p className="font-semibold text-lg">{watchName || client.name}</p>
                     <p className="text-sm text-muted-foreground">
                       {watchEmail || client.email}
                     </p>
@@ -187,9 +190,7 @@ export default function EditClientPage() {
                   </div>
                   Client Information
                 </CardTitle>
-                <CardDescription>
-                  Update contact details for your client.
-                </CardDescription>
+                <CardDescription>Update contact details for your client.</CardDescription>
               </CardHeader>
               <CardContent className="p-6 space-y-4">
                 {/* Name */}
@@ -265,6 +266,43 @@ export default function EditClientPage() {
                   </div>
                 </div>
 
+                {/* Status */}
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select
+                    value={watchStatus}
+                    onValueChange={(value) =>
+                      setValue("status", value as "active" | "inactive" | "lead", {
+                        shouldDirty: true,
+                      })
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select status">
+                        {selectedStatus && (
+                          <div className="flex items-center gap-2">
+                            <selectedStatus.icon className="h-4 w-4" />
+                            {selectedStatus.label}
+                          </div>
+                        )}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statusOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          <div className="flex items-center gap-2">
+                            <option.icon className="h-4 w-4" />
+                            <div>
+                              <p>{option.label}</p>
+                              <p className="text-xs text-muted-foreground">{option.description}</p>
+                            </div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Address */}
                 <div className="space-y-2">
                   <Label htmlFor="address">Address</Label>
@@ -313,7 +351,7 @@ export default function EditClientPage() {
                 <Button
                   type="submit"
                   disabled={isSubmitting || !isDirty}
-                  className="gradient-primary border-0 min-w-35"
+                  className="gradient-primary border-0 min-w-35 shadow-lg shadow-primary/25 transition-all hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>

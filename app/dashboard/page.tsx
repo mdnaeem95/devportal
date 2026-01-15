@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton, SkeletonCard, SkeletonListItem } from "@/components/dashboard/skeleton";
 import { AnimatedNumber, AnimatedCurrency } from "@/components/dashboard/animated-number";
+import { FollowUpReminders } from "@/components/dashboard/follow-up-reminders";
 import { trpc } from "@/lib/trpc";
 import { formatCurrency, formatDate, formatRelativeTime } from "@/lib/utils";
 import { FolderKanban, Users, FileText, TrendingUp, Plus, ArrowRight, ArrowUpRight, ArrowDownRight, CreditCard } from "lucide-react";
@@ -145,143 +146,151 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Recent Projects & Pending Invoices */}
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          {/* Recent Projects */}
-          <Card className="bg-card/50 backdrop-blur-sm">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base font-medium">Recent Projects</CardTitle>
-              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" asChild>
-                <Link href="/dashboard/projects">
-                  View all
-                  <ArrowRight className="ml-1 h-4 w-4" />
-                </Link>
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {projectsLoading ? (
-                <div className="space-y-3">
-                  <SkeletonListItem />
-                  <SkeletonListItem />
-                  <SkeletonListItem />
-                </div>
-              ) : recentProjects?.length === 0 ? (
-                <div className="py-8 text-center">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-secondary">
-                    <FolderKanban className="h-6 w-6 text-muted-foreground" />
+        {/* Main Content Grid */}
+        <div className="mt-6 grid gap-6 lg:grid-cols-3">
+          {/* Left Column - Recent Projects & Pending Invoices */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Recent Projects */}
+            <Card className="bg-card/50 backdrop-blur-sm">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-base font-medium">Recent Projects</CardTitle>
+                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" asChild>
+                  <Link href="/dashboard/projects">
+                    View all
+                    <ArrowRight className="ml-1 h-4 w-4" />
+                  </Link>
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {projectsLoading ? (
+                  <div className="space-y-3">
+                    <SkeletonListItem />
+                    <SkeletonListItem />
+                    <SkeletonListItem />
                   </div>
-                  <p className="mt-4 text-sm text-muted-foreground">No projects yet</p>
-                  <Button variant="link" size="sm" asChild className="mt-2">
-                    <Link href="/dashboard/projects/new">Create your first project</Link>
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {recentProjects?.map((project, index) => (
-                    <Link
-                      key={project.id}
-                      href={`/dashboard/projects/${project.id}`}
-                      className="flex items-center justify-between rounded-lg border border-border/50 p-4 transition-all duration-200 hover:bg-secondary/50 hover:border-border hover:shadow-sm active:scale-[0.99]"
-                      style={{ animationDelay: `${index * 50}ms` }}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium truncate">{project.name}</p>
-                        <p className="text-sm text-muted-foreground truncate">
-                          {project.client.name}
-                        </p>
-                      </div>
-                      <div className="ml-4 flex flex-col items-end gap-1">
-                        <Badge
-                          variant={
-                            project.status === "active"
-                              ? "success"
-                              : project.status === "completed"
-                              ? "default"
-                              : "secondary"
-                          }
-                        >
-                          {project.status.replace("_", " ")}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {formatRelativeTime(project.updatedAt)}
-                        </span>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Pending Invoices */}
-          <Card className="bg-card/50 backdrop-blur-sm">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base font-medium">Pending Invoices</CardTitle>
-              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" asChild>
-                <Link href="/dashboard/invoices">
-                  View all
-                  <ArrowRight className="ml-1 h-4 w-4" />
-                </Link>
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {invoicesLoading ? (
-                <div className="space-y-3">
-                  <SkeletonListItem />
-                  <SkeletonListItem />
-                  <SkeletonListItem />
-                </div>
-              ) : pendingInvoices?.length === 0 ? (
-                <div className="py-8 text-center">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-secondary">
-                    <CreditCard className="h-6 w-6 text-muted-foreground" />
+                ) : recentProjects?.length === 0 ? (
+                  <div className="py-8 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-secondary">
+                      <FolderKanban className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <p className="mt-4 text-sm text-muted-foreground">No projects yet</p>
+                    <Button variant="link" size="sm" asChild className="mt-2">
+                      <Link href="/dashboard/projects/new">Create your first project</Link>
+                    </Button>
                   </div>
-                  <p className="mt-4 text-sm text-muted-foreground">No pending invoices</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    All caught up! 🎉
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {pendingInvoices?.map((invoice, index) => {
-                    const isOverdue = new Date(invoice.dueDate) < new Date();
-                    return (
+                ) : (
+                  <div className="space-y-3">
+                    {recentProjects?.map((project, index) => (
                       <Link
-                        key={invoice.id}
-                        href={`/dashboard/invoices/${invoice.id}`}
+                        key={project.id}
+                        href={`/dashboard/projects/${project.id}`}
                         className="flex items-center justify-between rounded-lg border border-border/50 p-4 transition-all duration-200 hover:bg-secondary/50 hover:border-border hover:shadow-sm active:scale-[0.99]"
                         style={{ animationDelay: `${index * 50}ms` }}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium font-mono text-sm">
-                              {invoice.invoiceNumber}
-                            </p>
-                            {isOverdue && (
-                              <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                                Overdue
-                              </Badge>
-                            )}
-                          </div>
+                          <p className="font-medium truncate">{project.name}</p>
                           <p className="text-sm text-muted-foreground truncate">
-                            {invoice.client.name}
+                            {project.client.name}
                           </p>
                         </div>
                         <div className="ml-4 flex flex-col items-end gap-1">
-                          <p className="font-semibold text-green-500">
-                            {formatCurrency(invoice.total, invoice.currency ?? "USD")}
-                          </p>
-                          <span className={`text-xs ${isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
-                            {isOverdue ? "Was due" : "Due"} {formatDate(invoice.dueDate)}
+                          <Badge
+                            variant={
+                              project.status === "active"
+                                ? "success"
+                                : project.status === "completed"
+                                ? "default"
+                                : "secondary"
+                            }
+                          >
+                            {project.status.replace("_", " ")}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {formatRelativeTime(project.updatedAt)}
                           </span>
                         </div>
                       </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Pending Invoices */}
+            <Card className="bg-card/50 backdrop-blur-sm">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-base font-medium">Pending Invoices</CardTitle>
+                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" asChild>
+                  <Link href="/dashboard/invoices">
+                    View all
+                    <ArrowRight className="ml-1 h-4 w-4" />
+                  </Link>
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {invoicesLoading ? (
+                  <div className="space-y-3">
+                    <SkeletonListItem />
+                    <SkeletonListItem />
+                    <SkeletonListItem />
+                  </div>
+                ) : pendingInvoices?.length === 0 ? (
+                  <div className="py-8 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-secondary">
+                      <CreditCard className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <p className="mt-4 text-sm text-muted-foreground">No pending invoices</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      All caught up! 🎉
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {pendingInvoices?.map((invoice, index) => {
+                      const isOverdue = new Date(invoice.dueDate) < new Date();
+                      return (
+                        <Link
+                          key={invoice.id}
+                          href={`/dashboard/invoices/${invoice.id}`}
+                          className="flex items-center justify-between rounded-lg border border-border/50 p-4 transition-all duration-200 hover:bg-secondary/50 hover:border-border hover:shadow-sm active:scale-[0.99]"
+                          style={{ animationDelay: `${index * 50}ms` }}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium font-mono text-sm">
+                                {invoice.invoiceNumber}
+                              </p>
+                              {isOverdue && (
+                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                                  Overdue
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground truncate">
+                              {invoice.client.name}
+                            </p>
+                          </div>
+                          <div className="ml-4 flex flex-col items-end gap-1">
+                            <p className="font-semibold text-green-500">
+                              {formatCurrency(invoice.total, invoice.currency ?? "USD")}
+                            </p>
+                            <span className={`text-xs ${isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
+                              {isOverdue ? "Was due" : "Due"} {formatDate(invoice.dueDate)}
+                            </span>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Column - Follow-up Reminders */}
+          <div className="space-y-6">
+            <FollowUpReminders daysThreshold={30} maxItems={5} />
+          </div>
         </div>
 
         {/* Keyboard Shortcut Hint */}

@@ -11,10 +11,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Users, Mail, Building, Phone, MapPin, FileText, Check, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Users, Mail, Building, Phone, MapPin, FileText, Check, Sparkles, UserCheck,
+  UserX, UserPlus } from "lucide-react";
 
 const clientSchema = z.object({
   name: z.string().min(1, "Client name is required"),
@@ -23,9 +25,16 @@ const clientSchema = z.object({
   phone: z.string().optional(),
   address: z.string().optional(),
   notes: z.string().optional(),
+  status: z.enum(["active", "inactive", "lead"]).default("active"),
 });
 
 type ClientFormData = z.infer<typeof clientSchema>;
+
+const statusOptions = [
+  { value: "active", label: "Active", icon: UserCheck, description: "Currently working with this client" },
+  { value: "lead", label: "Lead", icon: UserPlus, description: "Potential client, not yet converted" },
+  { value: "inactive", label: "Inactive", icon: UserX, description: "No longer active" },
+];
 
 export default function NewClientPage() {
   const router = useRouter();
@@ -35,6 +44,7 @@ export default function NewClientPage() {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors, isDirty },
   } = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),
@@ -45,11 +55,13 @@ export default function NewClientPage() {
       phone: "",
       address: "",
       notes: "",
+      status: "active",
     },
   });
 
   const watchName = watch("name");
   const watchEmail = watch("email");
+  const watchStatus = watch("status");
 
   const createClient = trpc.clients.create.useMutation({
     onSuccess: (client) => {
@@ -71,6 +83,7 @@ export default function NewClientPage() {
       phone: data.phone || undefined,
       address: data.address || undefined,
       notes: data.notes || undefined,
+      status: data.status,
     });
   };
 
@@ -83,6 +96,8 @@ export default function NewClientPage() {
       .toUpperCase()
       .slice(0, 2) || "?";
   };
+
+  const selectedStatus = statusOptions.find((s) => s.value === watchStatus);
 
   return (
     <>
@@ -110,9 +125,7 @@ export default function NewClientPage() {
                       {getInitials(watchName || "?")}
                     </div>
                     <div>
-                      <p className="font-semibold text-lg">
-                        {watchName || "Client Name"}
-                      </p>
+                      <p className="font-semibold text-lg">{watchName || "Client Name"}</p>
                       <p className="text-sm text-muted-foreground">
                         {watchEmail || "email@example.com"}
                       </p>
@@ -131,9 +144,7 @@ export default function NewClientPage() {
                   </div>
                   Client Information
                 </CardTitle>
-                <CardDescription>
-                  Basic contact details for your client.
-                </CardDescription>
+                <CardDescription>Basic contact details for your client.</CardDescription>
               </CardHeader>
               <CardContent className="p-6 space-y-4">
                 {/* Name */}
@@ -209,6 +220,41 @@ export default function NewClientPage() {
                   </div>
                 </div>
 
+                {/* Status */}
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select
+                    value={watchStatus}
+                    onValueChange={(value) =>
+                      setValue("status", value as "active" | "inactive" | "lead")
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select status">
+                        {selectedStatus && (
+                          <div className="flex items-center gap-2">
+                            <selectedStatus.icon className="h-4 w-4" />
+                            {selectedStatus.label}
+                          </div>
+                        )}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statusOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          <div className="flex items-center gap-2">
+                            <option.icon className="h-4 w-4" />
+                            <div>
+                              <p>{option.label}</p>
+                              <p className="text-xs text-muted-foreground">{option.description}</p>
+                            </div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Address */}
                 <div className="space-y-2">
                   <Label htmlFor="address">Address</Label>
@@ -245,7 +291,8 @@ export default function NewClientPage() {
             <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm">
               <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
               <p className="text-muted-foreground">
-                <span className="font-medium text-foreground">Tip:</span> After adding a client, you can create projects for them and send contracts and invoices directly.
+                <span className="font-medium text-foreground">Tip:</span> Use "Lead" status for
+                potential clients you're nurturing. Change to "Active" once they sign a contract.
               </p>
             </div>
 
@@ -265,7 +312,7 @@ export default function NewClientPage() {
                 <Button
                   type="submit"
                   disabled={isSubmitting}
-                  className="gradient-primary border-0 min-w-30"
+                  className="gradient-primary border-0 min-w-30 shadow-lg shadow-primary/25 transition-all hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>

@@ -1,7 +1,10 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createId } from "@paralleldrive/cuid2";
 import { relations } from "drizzle-orm";
 import { users } from "./users";
+
+export const clientStatus = ["active", "inactive", "lead"] as const;
+export type ClientStatus = (typeof clientStatus)[number];
 
 export const clients = pgTable("clients", {
   id: text("id")
@@ -16,6 +19,11 @@ export const clients = pgTable("clients", {
   phone: text("phone"),
   address: text("address"),
   notes: text("notes"),
+  // New fields
+  starred: boolean("starred").default(false).notNull(),
+  status: text("status").$type<ClientStatus>().default("active").notNull(),
+  lastContactAt: timestamp("last_contact_at"),
+  // Timestamps
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
