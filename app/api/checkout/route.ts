@@ -7,7 +7,7 @@ import { createCheckoutSession } from "@/lib/stripe";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { payToken } = body;
+    const { payToken, amount } = body;
 
     if (!payToken) {
       return NextResponse.json(
@@ -39,6 +39,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (invoice.status === "cancelled") {
+      return NextResponse.json(
+        { error: "Invoice has been cancelled" },
+        { status: 400 }
+      );
+    }
+
     // Get user's Stripe account
     const user = await db.query.users.findFirst({
       where: eq(users.id, invoice.userId),
@@ -51,26 +58,65 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Calculate remaining balance and payment amount
+    const paidAmount = invoice.paidAmount || 0;
+    const remainingBalance = invoice.total - paidAmount;
+    
+    // Determine payment amount (use provided amount or remaining balance)
+    let paymentAmount = amount || remainingBalance;
+    
+    // Validate payment amount
+    if (paymentAmount <= 0) {
+      return NextResponse.json(
+        { error: "Invalid payment amount" },
+        { status: 400 }
+      );
+    }
+
+    if (paymentAmount > remainingBalance) {
+      return NextResponse.json(
+        { error: "Payment amount exceeds remaining balance" },
+        { status: 400 }
+      );
+    }
+
+    // Check minimum payment if partial payments enabled
+    if (invoice.allowPartialPayments && invoice.minimumPaymentAmount) {
+      if (paymentAmount < invoice.minimumPaymentAmount && paymentAmount !== remainingBalance) {
+        return NextResponse.json(
+          { error: `Minimum payment is ${(invoice.minimumPaymentAmount / 100).toFixed(2)}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Determine if this is a partial payment
+    const isPartialPayment = paymentAmount < remainingBalance;
+
     // Create checkout session
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const description = invoice.project
-      ? `${invoice.project.name} - Invoice ${invoice.invoiceNumber}`
-      : `Invoice ${invoice.invoiceNumber}`;
+    const description = isPartialPayment
+      ? `Partial payment for Invoice ${invoice.invoiceNumber}${invoice.project ? ` - ${invoice.project.name}` : ""}`
+      : invoice.project
+        ? `${invoice.project.name} - Invoice ${invoice.invoiceNumber}`
+        : `Invoice ${invoice.invoiceNumber}`;
 
     const { sessionId, url } = await createCheckoutSession({
       invoiceId: invoice.id,
       invoiceNumber: invoice.invoiceNumber,
-      amount: invoice.total,
+      amount: paymentAmount,
       currency: invoice.currency ?? "USD",
       customerEmail: invoice.client.email,
       customerName: invoice.client.name,
       description,
       connectedAccountId: user.stripeAccountId,
-      successUrl: `${baseUrl}/pay/${payToken}?success=true`,
+      successUrl: `${baseUrl}/pay/${payToken}?success=true&amount=${paymentAmount}`,
       cancelUrl: `${baseUrl}/pay/${payToken}?cancelled=true`,
       metadata: {
         clientId: invoice.clientId,
         projectId: invoice.projectId || "",
+        paymentAmount: paymentAmount.toString(),
+        isPartialPayment: isPartialPayment.toString(),
       },
     });
 

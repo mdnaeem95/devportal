@@ -1,6 +1,6 @@
 import { sendEmail } from "./email";
 import { ContractSentEmail, ContractSignedClientEmail, ContractSignedDeveloperEmail, ContractDeclinedEmail } from "./contract-emails";
-import { InvoiceSentEmail, InvoicePaidClientEmail, InvoicePaidDeveloperEmail, PaymentReminderEmail } from "./invoice-emails";
+import { InvoiceSentEmail, InvoicePaidClientEmail, InvoicePaidDeveloperEmail, PaymentReminderEmail, PartialPaymentClientEmail, PartialPaymentDeveloperEmail } from "./invoice-emails";
 
 // ============================================
 // Contract Emails
@@ -39,13 +39,10 @@ export async function sendContractEmail(params: SendContractEmailParams) {
 }
 
 interface SendContractSignedEmailsParams {
-  // Client info
   clientEmail: string;
   clientName: string;
-  // Developer info
   developerEmail: string;
   developerName: string;
-  // Contract info
   contractName: string;
   projectName?: string;
   signedAt: string;
@@ -55,7 +52,6 @@ interface SendContractSignedEmailsParams {
 }
 
 export async function sendContractSignedEmails(params: SendContractSignedEmailsParams) {
-  // Send to client
   const clientResult = await sendEmail({
     to: params.clientEmail,
     subject: `Contract Signed: ${params.contractName}`,
@@ -72,7 +68,6 @@ export async function sendContractSignedEmails(params: SendContractSignedEmailsP
     }),
   });
 
-  // Send to developer
   const developerResult = await sendEmail({
     to: params.developerEmail,
     subject: `✓ Contract Signed by ${params.clientName}`,
@@ -133,6 +128,8 @@ interface SendInvoiceEmailParams {
   lineItems?: Array<{ description: string; amount: string }>;
   businessName?: string;
   businessLogo?: string;
+  allowPartialPayments?: boolean;
+  minimumPaymentAmount?: string;
 }
 
 export async function sendInvoiceEmail(params: SendInvoiceEmailParams) {
@@ -153,18 +150,17 @@ export async function sendInvoiceEmail(params: SendInvoiceEmailParams) {
       lineItems: params.lineItems,
       businessName: params.businessName,
       businessLogo: params.businessLogo,
+      allowPartialPayments: params.allowPartialPayments,
+      minimumPaymentAmount: params.minimumPaymentAmount,
     }),
   });
 }
 
 interface SendInvoicePaidEmailsParams {
-  // Client info
   clientEmail: string;
   clientName: string;
-  // Developer info
   developerEmail: string;
   developerName: string;
-  // Invoice info
   invoiceNumber: string;
   amount: string;
   currency: string;
@@ -177,7 +173,6 @@ interface SendInvoicePaidEmailsParams {
 }
 
 export async function sendInvoicePaidEmails(params: SendInvoicePaidEmailsParams) {
-  // Send receipt to client
   const clientResult = await sendEmail({
     to: params.clientEmail,
     subject: `Payment Received - Invoice ${params.invoiceNumber}`,
@@ -197,7 +192,6 @@ export async function sendInvoicePaidEmails(params: SendInvoicePaidEmailsParams)
     }),
   });
 
-  // Notify developer
   const developerResult = await sendEmail({
     to: params.developerEmail,
     subject: `💰 Payment Received: ${params.currency} ${params.amount}`,
@@ -211,6 +205,73 @@ export async function sendInvoicePaidEmails(params: SendInvoicePaidEmailsParams)
       projectName: params.projectName,
       paymentMethod: params.paymentMethod,
       viewUrl: params.viewUrl,
+    }),
+  });
+
+  return { clientResult, developerResult };
+}
+
+interface SendPartialPaymentEmailsParams {
+  clientEmail: string;
+  clientName: string;
+  developerEmail: string;
+  developerName: string;
+  invoiceNumber: string;
+  paymentAmount: string;
+  totalAmount: string;
+  remainingBalance: string;
+  totalPaid: string;
+  currency: string;
+  paidAt: string;
+  projectName?: string;
+  paymentMethod?: string;
+  viewUrl: string;
+  businessName?: string;
+  businessLogo?: string;
+  percentagePaid: number;
+}
+
+export async function sendPartialPaymentEmails(params: SendPartialPaymentEmailsParams) {
+  const clientResult = await sendEmail({
+    to: params.clientEmail,
+    subject: `Payment Received - Invoice ${params.invoiceNumber} (${params.percentagePaid}% paid)`,
+    replyTo: params.developerEmail,
+    react: PartialPaymentClientEmail({
+      clientName: params.clientName,
+      invoiceNumber: params.invoiceNumber,
+      paymentAmount: params.paymentAmount,
+      totalAmount: params.totalAmount,
+      remainingBalance: params.remainingBalance,
+      totalPaid: params.totalPaid,
+      currency: params.currency,
+      paidAt: params.paidAt,
+      projectName: params.projectName,
+      developerName: params.developerName,
+      paymentMethod: params.paymentMethod,
+      viewUrl: params.viewUrl,
+      businessName: params.businessName,
+      businessLogo: params.businessLogo,
+      percentagePaid: params.percentagePaid,
+    }),
+  });
+
+  const developerResult = await sendEmail({
+    to: params.developerEmail,
+    subject: `💵 Partial Payment: ${params.currency} ${params.paymentAmount} (${params.percentagePaid}% of invoice)`,
+    react: PartialPaymentDeveloperEmail({
+      developerName: params.developerName,
+      clientName: params.clientName,
+      invoiceNumber: params.invoiceNumber,
+      paymentAmount: params.paymentAmount,
+      totalAmount: params.totalAmount,
+      remainingBalance: params.remainingBalance,
+      totalPaid: params.totalPaid,
+      currency: params.currency,
+      paidAt: params.paidAt,
+      projectName: params.projectName,
+      paymentMethod: params.paymentMethod,
+      viewUrl: params.viewUrl,
+      percentagePaid: params.percentagePaid,
     }),
   });
 
@@ -231,16 +292,26 @@ interface SendPaymentReminderEmailParams {
   payUrl: string;
   businessName?: string;
   businessLogo?: string;
+  customMessage?: string;
+  isPartiallyPaid?: boolean;
+  paidAmount?: string;
+  remainingBalance?: string;
 }
 
 export async function sendPaymentReminderEmail(params: SendPaymentReminderEmailParams) {
   const isOverdue = params.daysOverdue && params.daysOverdue > 0;
   
+  let subject = `Reminder: Invoice ${params.invoiceNumber} from ${params.developerName}`;
+  if (isOverdue) {
+    subject = `Overdue: Invoice ${params.invoiceNumber} from ${params.developerName}`;
+  }
+  if (params.isPartiallyPaid) {
+    subject = `Reminder: ${params.remainingBalance} remaining on Invoice ${params.invoiceNumber}`;
+  }
+  
   return sendEmail({
     to: params.clientEmail,
-    subject: isOverdue
-      ? `Overdue: Invoice ${params.invoiceNumber} from ${params.developerName}`
-      : `Reminder: Invoice ${params.invoiceNumber} from ${params.developerName}`,
+    subject,
     replyTo: params.developerEmail,
     react: PaymentReminderEmail({
       clientName: params.clientName,
@@ -255,6 +326,10 @@ export async function sendPaymentReminderEmail(params: SendPaymentReminderEmailP
       payUrl: params.payUrl,
       businessName: params.businessName,
       businessLogo: params.businessLogo,
+      customMessage: params.customMessage,
+      isPartiallyPaid: params.isPartiallyPaid,
+      paidAmount: params.paidAmount,
+      remainingBalance: params.remainingBalance,
     }),
   });
 }

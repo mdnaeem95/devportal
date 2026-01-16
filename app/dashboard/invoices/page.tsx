@@ -9,12 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/dashboard/skeleton";
 import { AnimatedNumber, AnimatedCurrency } from "@/components/dashboard/animated-number";
+import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { Plus, FileText, ArrowUpRight, CheckCircle2, AlertCircle, Send, Eye, XCircle, TrendingUp,
-  Clock, DollarSign } from "lucide-react";
+  Clock, DollarSign, SplitSquareHorizontal } from "lucide-react";
 
-type StatusFilter = "all" | "draft" | "pending" | "paid" | "overdue";
+type StatusFilter = "all" | "draft" | "pending" | "partially_paid" | "paid" | "overdue";
 
 const statusConfig = {
   draft: {
@@ -34,6 +35,12 @@ const statusConfig = {
     variant: "default" as const,
     icon: Eye,
     color: "text-purple-400",
+  },
+  partially_paid: {
+    label: "Partial",
+    variant: "warning" as const,
+    icon: SplitSquareHorizontal,
+    color: "text-yellow-500",
   },
   paid: {
     label: "Paid",
@@ -59,6 +66,7 @@ const filterTabs: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "draft", label: "Draft" },
   { value: "pending", label: "Pending" },
+  { value: "partially_paid", label: "Partial" },
   { value: "paid", label: "Paid" },
   { value: "overdue", label: "Overdue" },
 ];
@@ -104,20 +112,25 @@ export default function InvoicesPage() {
   const stats = {
     draft: invoices?.filter((i) => i.status === "draft").length ?? 0,
     pending: invoices?.filter((i) => ["sent", "viewed"].includes(i.status)).length ?? 0,
+    partiallyPaid: invoices?.filter((i) => i.status === "partially_paid").length ?? 0,
     paid: invoices?.filter((i) => i.status === "paid").length ?? 0,
     overdue: invoices?.filter((i) => {
-      if (i.status === "paid" || i.status === "cancelled") return false;
+      if (i.status === "paid" || i.status === "cancelled" || i.status === "partially_paid") return false;
       return new Date(i.dueDate) < new Date();
     }).length ?? 0,
     totalOutstanding:
       invoices
-        ?.filter((i) => ["sent", "viewed"].includes(i.status) || 
+        ?.filter((i) => ["sent", "viewed", "partially_paid"].includes(i.status) || 
           (i.status !== "paid" && i.status !== "cancelled" && new Date(i.dueDate) < new Date()))
-        .reduce((sum, i) => sum + i.total, 0) ?? 0,
+        .reduce((sum, i) => sum + i.total - (i.paidAmount ?? 0), 0) ?? 0,
     totalPaid:
       invoices
         ?.filter((i) => i.status === "paid")
         .reduce((sum, i) => sum + i.total, 0) ?? 0,
+    totalPartiallyPaid:
+      invoices
+        ?.filter((i) => i.status === "partially_paid")
+        .reduce((sum, i) => sum + (i.paidAmount ?? 0), 0) ?? 0,
   };
 
   // Filter invoices
@@ -125,6 +138,7 @@ export default function InvoicesPage() {
     const isOverdue =
       invoice.status !== "paid" &&
       invoice.status !== "cancelled" &&
+      invoice.status !== "partially_paid" &&
       new Date(invoice.dueDate) < new Date();
 
     switch (statusFilter) {
@@ -132,6 +146,8 @@ export default function InvoicesPage() {
         return invoice.status === "draft";
       case "pending":
         return ["sent", "viewed"].includes(invoice.status) && !isOverdue;
+      case "partially_paid":
+        return invoice.status === "partially_paid";
       case "paid":
         return invoice.status === "paid";
       case "overdue":
@@ -145,11 +161,11 @@ export default function InvoicesPage() {
     <>
       <Header
         title="Invoices"
-        description={`${stats.pending} pending · ${formatCurrency(stats.totalOutstanding)} outstanding`}
+        description={`${stats.pending + stats.partiallyPaid} pending · ${formatCurrency(stats.totalOutstanding)} outstanding`}
         onSearchClick={() => setCommandOpen(true)}
         action={
           <Button
-            className="gradient-primary border-0 shadow-lg shadow-primary/25 transition-all hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5"
+            className="gradient-primary border-0 shadow-lg shadow-primary/25 transition-all hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 cursor-pointer"
             asChild
           >
             <Link href="/dashboard/invoices/new">
@@ -165,9 +181,10 @@ export default function InvoicesPage() {
       <div className="flex-1 overflow-auto">
         {/* Quick Stats */}
         <div className="border-b border-border/50 bg-card/30 p-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {isLoading ? (
               <>
+                <StatCardSkeleton />
                 <StatCardSkeleton />
                 <StatCardSkeleton />
                 <StatCardSkeleton />
@@ -197,14 +214,25 @@ export default function InvoicesPage() {
                     </p>
                   </CardContent>
                 </Card>
+                <Card className="bg-card/50 backdrop-blur-sm transition-all hover:bg-card hover:-translate-y-0.5 hover:shadow-lg hover:shadow-yellow-500/10">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground">Partial</p>
+                      <SplitSquareHorizontal className="h-4 w-4 text-yellow-500" />
+                    </div>
+                    <p className="text-2xl font-bold mt-1 text-yellow-500">
+                      <AnimatedNumber value={stats.partiallyPaid} />
+                    </p>
+                  </CardContent>
+                </Card>
                 <Card className="bg-card/50 backdrop-blur-sm transition-all hover:bg-card hover:-translate-y-0.5 hover:shadow-lg hover:shadow-green-500/10">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm text-muted-foreground">Paid</p>
+                      <p className="text-sm text-muted-foreground">Collected</p>
                       <TrendingUp className="h-4 w-4 text-green-400" />
                     </div>
                     <p className="text-2xl font-bold mt-1 text-green-500">
-                      <AnimatedCurrency value={stats.totalPaid} />
+                      <AnimatedCurrency value={stats.totalPaid + stats.totalPartiallyPaid} />
                     </p>
                   </CardContent>
                 </Card>
@@ -239,6 +267,9 @@ export default function InvoicesPage() {
                 case "pending":
                   count = stats.pending;
                   break;
+                case "partially_paid":
+                  count = stats.partiallyPaid;
+                  break;
                 case "paid":
                   count = stats.paid;
                   break;
@@ -252,7 +283,7 @@ export default function InvoicesPage() {
                   key={tab.value}
                   onClick={() => setStatusFilter(tab.value)}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative whitespace-nowrap",
+                    "flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative whitespace-nowrap",
                     statusFilter === tab.value
                       ? "text-foreground"
                       : "text-muted-foreground hover:text-foreground"
@@ -265,7 +296,9 @@ export default function InvoicesPage() {
                       statusFilter === tab.value
                         ? tab.value === "overdue"
                           ? "bg-destructive/20 text-destructive"
-                          : "bg-primary/20 text-primary"
+                          : tab.value === "partially_paid"
+                            ? "bg-yellow-500/20 text-yellow-600"
+                            : "bg-primary/20 text-primary"
                         : "bg-secondary text-muted-foreground"
                     )}
                   >
@@ -295,22 +328,22 @@ export default function InvoicesPage() {
                   <FileText className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <h3 className="mt-6 text-lg font-semibold">
-                  {statusFilter === "all" ? "No invoices yet" : `No ${statusFilter} invoices`}
+                  {statusFilter === "all" ? "No invoices yet" : `No ${statusFilter === "partially_paid" ? "partially paid" : statusFilter} invoices`}
                 </h3>
                 <p className="mt-2 text-center text-sm text-muted-foreground max-w-xs">
                   {statusFilter === "all"
                     ? "Create your first invoice to start getting paid for your work."
-                    : `You don't have any ${statusFilter} invoices right now.`}
+                    : `You don't have any ${statusFilter === "partially_paid" ? "partially paid" : statusFilter} invoices right now.`}
                 </p>
                 {statusFilter === "all" ? (
-                  <Button className="mt-6 gradient-primary border-0" asChild>
+                  <Button className="mt-6 gradient-primary border-0 cursor-pointer" asChild>
                     <Link href="/dashboard/invoices/new">
                       <Plus className="h-4 w-4" />
                       Create Invoice
                     </Link>
                   </Button>
                 ) : (
-                  <Button variant="outline" className="mt-6" onClick={() => setStatusFilter("all")}>
+                  <Button variant="outline" className="mt-6 cursor-pointer" onClick={() => setStatusFilter("all")}>
                     View All Invoices
                   </Button>
                 )}
@@ -324,7 +357,12 @@ export default function InvoicesPage() {
                 const isOverdue =
                   invoice.status !== "paid" &&
                   invoice.status !== "cancelled" &&
+                  invoice.status !== "partially_paid" &&
                   new Date(invoice.dueDate) < new Date();
+                const isPartiallyPaid = invoice.status === "partially_paid";
+                const paidAmount = invoice.paidAmount ?? 0;
+                const remainingBalance = invoice.total - paidAmount;
+                const paymentProgress = invoice.total > 0 ? (paidAmount / invoice.total) * 100 : 0;
 
                 return (
                   <Link
@@ -333,7 +371,10 @@ export default function InvoicesPage() {
                     className="block"
                     style={{ animationDelay: `${index * 30}ms` }}
                   >
-                    <Card className="bg-card/50 backdrop-blur-sm transition-all duration-300 hover:bg-card hover:border-border hover:shadow-lg hover:-translate-y-0.5 group">
+                    <Card className={cn(
+                      "bg-card/50 backdrop-blur-sm transition-all duration-300 hover:bg-card hover:border-border hover:shadow-lg hover:-translate-y-0.5 group",
+                      isPartiallyPaid && "border-yellow-500/30"
+                    )}>
                       <CardContent className="p-4">
                         <div className="flex items-center gap-4">
                           {/* Icon */}
@@ -344,6 +385,8 @@ export default function InvoicesPage() {
                                 ? "bg-green-500/20"
                                 : isOverdue
                                 ? "bg-red-500/20"
+                                : isPartiallyPaid
+                                ? "bg-yellow-500/20"
                                 : "bg-secondary"
                             )}
                           >
@@ -369,6 +412,15 @@ export default function InvoicesPage() {
                                 </>
                               )}
                             </div>
+                            {/* Progress bar for partially paid */}
+                            {isPartiallyPaid && (
+                              <div className="mt-2 flex items-center gap-2">
+                                <Progress value={paymentProgress} className="h-1.5 flex-1" />
+                                <span className="text-xs text-yellow-500 font-medium">
+                                  {Math.round(paymentProgress)}%
+                                </span>
+                              </div>
+                            )}
                           </div>
 
                           {/* Amount & Status */}
@@ -376,11 +428,23 @@ export default function InvoicesPage() {
                             <p
                               className={cn(
                                 "font-semibold text-lg",
-                                invoice.status === "paid" ? "text-green-500" : "text-foreground"
+                                invoice.status === "paid" 
+                                  ? "text-green-500" 
+                                  : isPartiallyPaid 
+                                    ? "text-yellow-500"
+                                    : "text-foreground"
                               )}
                             >
-                              {formatCurrency(invoice.total, invoice.currency ?? "USD")}
+                              {isPartiallyPaid 
+                                ? formatCurrency(remainingBalance, invoice.currency ?? "USD")
+                                : formatCurrency(invoice.total, invoice.currency ?? "USD")
+                              }
                             </p>
+                            {isPartiallyPaid && (
+                              <p className="text-xs text-muted-foreground">
+                                of {formatCurrency(invoice.total, invoice.currency ?? "USD")}
+                              </p>
+                            )}
                             <div className="flex items-center justify-end gap-2 mt-1">
                               {isOverdue ? (
                                 <Badge variant="destructive">Overdue</Badge>

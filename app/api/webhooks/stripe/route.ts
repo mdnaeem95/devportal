@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { constructWebhookEvent } from "@/lib/stripe";
 import { db } from "@/server/db";
-import { invoices, milestones, users } from "@/server/db/schema";
+import { invoices, invoicePayments, milestones, users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
-import { sendInvoicePaidEmails } from "@/lib/emails";
+import { createId } from "@paralleldrive/cuid2";
+import { sendInvoicePaidEmails, sendPartialPaymentEmails } from "@/lib/emails";
 import type Stripe from "stripe";
 
 // Helper to format currency
@@ -100,6 +101,7 @@ export async function POST(request: NextRequest) {
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const invoiceId = session.metadata?.invoiceId;
+  const paymentAmountStr = session.metadata?.paymentAmount;
 
   if (!invoiceId) {
     console.log("[Stripe Webhook] No invoiceId in session metadata");
@@ -128,24 +130,49 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   }
 
   const paidAt = new Date();
+  
+  // Determine payment amount from metadata or session amount
+  const paymentAmount = paymentAmountStr 
+    ? parseInt(paymentAmountStr) 
+    : session.amount_total || invoice.total;
 
-  // Update invoice status
+  // Calculate new totals
+  const currentPaidAmount = invoice.paidAmount || 0;
+  const newTotalPaid = currentPaidAmount + paymentAmount;
+  const remainingAfterPayment = invoice.total - newTotalPaid;
+  const isNowFullyPaid = remainingAfterPayment <= 0;
+
+  // Record the payment in invoice_payments table
+  await db.insert(invoicePayments).values({
+    id: createId(),
+    invoiceId: invoice.id,
+    userId: invoice.userId,
+    amount: paymentAmount,
+    paymentMethod: "stripe",
+    stripePaymentId: session.payment_intent as string,
+    paidAt,
+  });
+
+  // Determine new status
+  const newStatus = isNowFullyPaid ? "paid" : "partially_paid";
+
+  // Update invoice
   await db
     .update(invoices)
     .set({
-      status: "paid",
-      paidAt,
-      paidAmount: invoice.total,
+      status: newStatus,
+      paidAt: isNowFullyPaid ? paidAt : invoice.paidAt,
+      paidAmount: newTotalPaid,
       paymentMethod: "stripe",
       stripePaymentId: session.payment_intent as string,
       updatedAt: new Date(),
     })
     .where(eq(invoices.id, invoiceId));
 
-  console.log(`[Stripe Webhook] Invoice marked as paid: ${invoiceId}`);
+  console.log(`[Stripe Webhook] Invoice updated: ${invoiceId} - Status: ${newStatus}, Paid: ${newTotalPaid}`);
 
-  // Update milestone if linked
-  if (invoice.milestoneId) {
+  // Update milestone if fully paid and linked
+  if (isNowFullyPaid && invoice.milestoneId) {
     await db
       .update(milestones)
       .set({ status: "paid" })
@@ -162,23 +189,51 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   // Send confirmation emails
   const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/pay/${invoice.payToken}`;
 
-  await sendInvoicePaidEmails({
-    clientEmail: invoice.client.email,
-    clientName: invoice.client.name,
-    developerEmail: user?.email || "",
-    developerName: user?.name || "Developer",
-    invoiceNumber: invoice.invoiceNumber,
-    amount: formatCurrency(invoice.total, invoice.currency ?? "USD").replace(/[^0-9.,]/g, ""),
-    currency: invoice.currency ?? "USD",
-    paidAt: formatDate(paidAt),
-    projectName: invoice.project?.name,
-    paymentMethod: "Credit Card",
-    viewUrl,
-    businessName: user?.businessName || "",
-    businessLogo: user?.logoUrl ?? undefined,
-  });
+  if (isNowFullyPaid) {
+    // Send full payment confirmation
+    await sendInvoicePaidEmails({
+      clientEmail: invoice.client.email,
+      clientName: invoice.client.name,
+      developerEmail: user?.email || "",
+      developerName: user?.name || "Developer",
+      invoiceNumber: invoice.invoiceNumber,
+      amount: formatCurrency(invoice.total, invoice.currency ?? "USD").replace(/[^0-9.,]/g, ""),
+      currency: invoice.currency ?? "USD",
+      paidAt: formatDate(paidAt),
+      projectName: invoice.project?.name,
+      paymentMethod: "Credit Card",
+      viewUrl,
+      businessName: user?.businessName || "",
+      businessLogo: user?.logoUrl ?? undefined,
+    });
 
-  console.log(`[Stripe Webhook] Payment confirmation emails sent for: ${invoiceId}`);
+    console.log(`[Stripe Webhook] Full payment confirmation emails sent for: ${invoiceId}`);
+  } else {
+    // Send partial payment confirmation
+    const percentagePaid = Math.round((newTotalPaid / invoice.total) * 100);
+
+    await sendPartialPaymentEmails({
+      clientEmail: invoice.client.email,
+      clientName: invoice.client.name,
+      developerEmail: user?.email || "",
+      developerName: user?.name || "Developer",
+      invoiceNumber: invoice.invoiceNumber,
+      paymentAmount: formatCurrency(paymentAmount, invoice.currency ?? "USD").replace(/[^0-9.,]/g, ""),
+      totalAmount: formatCurrency(invoice.total, invoice.currency ?? "USD").replace(/[^0-9.,]/g, ""),
+      remainingBalance: formatCurrency(remainingAfterPayment, invoice.currency ?? "USD").replace(/[^0-9.,]/g, ""),
+      totalPaid: formatCurrency(newTotalPaid, invoice.currency ?? "USD").replace(/[^0-9.,]/g, ""),
+      currency: invoice.currency ?? "USD",
+      paidAt: formatDate(paidAt),
+      projectName: invoice.project?.name,
+      paymentMethod: "Credit Card",
+      viewUrl,
+      businessName: user?.businessName || "",
+      businessLogo: user?.logoUrl ?? undefined,
+      percentagePaid,
+    });
+
+    console.log(`[Stripe Webhook] Partial payment confirmation emails sent for: ${invoiceId}`);
+  }
 }
 
 async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
@@ -192,24 +247,55 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
   console.log(`[Stripe Webhook] Payment succeeded for invoice: ${invoiceId}`);
 
   // The main processing happens in checkout.session.completed
-  // This is a backup / additional confirmation
+  // This is a backup handler - only process if checkout.session.completed didn't run
   const invoice = await db.query.invoices.findFirst({
     where: eq(invoices.id, invoiceId),
   });
 
-  if (invoice && invoice.status !== "paid") {
-    await db
-      .update(invoices)
-      .set({
-        status: "paid",
-        paidAt: new Date(),
-        paidAmount: paymentIntent.amount,
-        paymentMethod: "stripe",
-        stripePaymentId: paymentIntent.id,
-        updatedAt: new Date(),
-      })
-      .where(eq(invoices.id, invoiceId));
+  if (!invoice) {
+    console.error(`[Stripe Webhook] Invoice not found in payment_intent.succeeded: ${invoiceId}`);
+    return;
   }
+
+  // Check if payment was already recorded (by checkout.session.completed)
+  const existingPayment = await db.query.invoicePayments.findFirst({
+    where: eq(invoicePayments.stripePaymentId, paymentIntent.id),
+  });
+
+  if (existingPayment) {
+    console.log(`[Stripe Webhook] Payment already recorded for: ${paymentIntent.id}`);
+    return;
+  }
+
+  // If not recorded, this is a fallback - record the payment
+  const paymentAmount = paymentIntent.amount;
+  const currentPaidAmount = invoice.paidAmount || 0;
+  const newTotalPaid = currentPaidAmount + paymentAmount;
+  const isNowFullyPaid = newTotalPaid >= invoice.total;
+
+  await db.insert(invoicePayments).values({
+    id: createId(),
+    invoiceId: invoice.id,
+    userId: invoice.userId,
+    amount: paymentAmount,
+    paymentMethod: "stripe",
+    stripePaymentId: paymentIntent.id,
+    paidAt: new Date(),
+  });
+
+  await db
+    .update(invoices)
+    .set({
+      status: isNowFullyPaid ? "paid" : "partially_paid",
+      paidAt: isNowFullyPaid ? new Date() : invoice.paidAt,
+      paidAmount: newTotalPaid,
+      paymentMethod: "stripe",
+      stripePaymentId: paymentIntent.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(invoices.id, invoiceId));
+
+  console.log(`[Stripe Webhook] Fallback payment recorded for: ${invoiceId}`);
 }
 
 async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
@@ -229,6 +315,22 @@ async function handleAccountUpdated(account: Stripe.Account) {
   const userId = account.metadata?.userId;
 
   if (!userId) {
+    // Try to find user by stripeAccountId
+    const user = await db.query.users.findFirst({
+      where: eq(users.stripeAccountId, account.id),
+    });
+
+    if (user) {
+      await db
+        .update(users)
+        .set({
+          stripeConnected: account.charges_enabled && account.payouts_enabled,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, user.id));
+      
+      console.log(`[Stripe Webhook] Account updated for user: ${user.id}`);
+    }
     return;
   }
 

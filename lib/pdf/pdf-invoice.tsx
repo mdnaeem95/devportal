@@ -5,33 +5,16 @@ import {
   View,
   StyleSheet,
   Image,
-  Font,
   renderToBuffer,
 } from "@react-pdf/renderer";
 
-// Register fonts
-Font.register({
-  family: "Inter",
-  fonts: [
-    {
-      src: "https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2",
-      fontWeight: 400,
-    },
-    {
-      src: "https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuI6fAZ9hiJ-Ek-_EeA.woff2",
-      fontWeight: 600,
-    },
-    {
-      src: "https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuFuYAZ9hiJ-Ek-_EeA.woff2",
-      fontWeight: 700,
-    },
-  ],
-});
+// Use built-in Helvetica font - guaranteed to work in all environments
+// Custom web fonts (woff2) fail silently in serverless environments
 
 const styles = StyleSheet.create({
   page: {
     padding: 50,
-    fontFamily: "Inter",
+    fontFamily: "Helvetica",
     fontSize: 10,
     color: "#1a1a1a",
   },
@@ -46,7 +29,7 @@ const styles = StyleSheet.create({
   },
   businessName: {
     fontSize: 20,
-    fontWeight: 700,
+    fontFamily: "Helvetica-Bold",
   },
   businessInfo: {
     fontSize: 9,
@@ -59,7 +42,7 @@ const styles = StyleSheet.create({
   },
   invoiceLabel: {
     fontSize: 28,
-    fontWeight: 700,
+    fontFamily: "Helvetica-Bold",
     color: "#1a1a1a",
   },
   invoiceNumber: {
@@ -74,8 +57,7 @@ const styles = StyleSheet.create({
     padding: "4 12",
     borderRadius: 4,
     fontSize: 10,
-    fontWeight: 600,
-    alignSelf: "flex-end",
+    fontFamily: "Helvetica-Bold",
   },
   statusBadgeUnpaid: {
     marginTop: 8,
@@ -84,8 +66,7 @@ const styles = StyleSheet.create({
     padding: "4 12",
     borderRadius: 4,
     fontSize: 10,
-    fontWeight: 600,
-    alignSelf: "flex-end",
+    fontFamily: "Helvetica-Bold",
   },
   statusBadgeOverdue: {
     marginTop: 8,
@@ -94,8 +75,7 @@ const styles = StyleSheet.create({
     padding: "4 12",
     borderRadius: 4,
     fontSize: 10,
-    fontWeight: 600,
-    alignSelf: "flex-end",
+    fontFamily: "Helvetica-Bold",
   },
   partiesRow: {
     flexDirection: "row",
@@ -113,7 +93,7 @@ const styles = StyleSheet.create({
   },
   partyName: {
     fontSize: 12,
-    fontWeight: 600,
+    fontFamily: "Helvetica-Bold",
     marginBottom: 4,
   },
   partyDetail: {
@@ -138,11 +118,11 @@ const styles = StyleSheet.create({
   },
   detailValue: {
     fontSize: 11,
-    fontWeight: 600,
+    fontFamily: "Helvetica-Bold",
   },
   detailValuePaid: {
     fontSize: 11,
-    fontWeight: 600,
+    fontFamily: "Helvetica-Bold",
     color: "#10b981",
   },
   table: {
@@ -157,7 +137,7 @@ const styles = StyleSheet.create({
   },
   tableHeaderCell: {
     fontSize: 9,
-    fontWeight: 600,
+    fontFamily: "Helvetica-Bold",
     color: "#6b7280",
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -165,7 +145,9 @@ const styles = StyleSheet.create({
   tableRow: {
     flexDirection: "row",
     padding: "12 12",
-    borderBottom: "1px solid #f3f4f6",
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+    borderBottomStyle: "solid",
   },
   tableCell: {
     fontSize: 10,
@@ -208,24 +190,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginTop: 10,
     paddingTop: 10,
-    borderTop: "2px solid #1a1a1a",
+    borderTopWidth: 2,
+    borderTopColor: "#1a1a1a",
+    borderTopStyle: "solid",
     width: 200,
   },
   grandTotalLabel: {
     flex: 1,
     fontSize: 12,
-    fontWeight: 700,
+    fontFamily: "Helvetica-Bold",
   },
   grandTotalValue: {
     width: 80,
     fontSize: 14,
-    fontWeight: 700,
+    fontFamily: "Helvetica-Bold",
     textAlign: "right",
   },
   grandTotalValuePaid: {
     width: 80,
     fontSize: 14,
-    fontWeight: 700,
+    fontFamily: "Helvetica-Bold",
     textAlign: "right",
     color: "#10b981",
   },
@@ -237,7 +221,7 @@ const styles = StyleSheet.create({
   },
   notesTitle: {
     fontSize: 10,
-    fontWeight: 600,
+    fontFamily: "Helvetica-Bold",
     marginBottom: 8,
   },
   notesText: {
@@ -250,7 +234,9 @@ const styles = StyleSheet.create({
     bottom: 30,
     left: 50,
     right: 50,
-    borderTop: "1px solid #e5e7eb",
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+    borderTopStyle: "solid",
     paddingTop: 10,
   },
   footerText: {
@@ -323,7 +309,6 @@ function InvoicePDF({ invoice, client, developer, project }: InvoicePDFProps) {
     });
   };
 
-  // Determine which status badge style to use
   const getStatusBadgeStyle = () => {
     if (isPaid) return styles.statusBadgePaid;
     if (isOverdue) return styles.statusBadgeOverdue;
@@ -360,9 +345,9 @@ function InvoicePDF({ invoice, client, developer, project }: InvoicePDFProps) {
           <View style={styles.invoiceTitle}>
             <Text style={styles.invoiceLabel}>INVOICE</Text>
             <Text style={styles.invoiceNumber}>{invoice.invoiceNumber}</Text>
-            <Text style={getStatusBadgeStyle()}>
-              {getStatusText()}
-            </Text>
+            <View style={getStatusBadgeStyle()}>
+              <Text style={{ color: "#ffffff", fontSize: 10 }}>{getStatusText()}</Text>
+            </View>
           </View>
         </View>
 
@@ -468,7 +453,7 @@ function InvoicePDF({ invoice, client, developer, project }: InvoicePDFProps) {
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            Generated by Zoho • Invoice {invoice.invoiceNumber}
+            Generated by Zovo • Invoice {invoice.invoiceNumber}
           </Text>
         </View>
       </Page>
