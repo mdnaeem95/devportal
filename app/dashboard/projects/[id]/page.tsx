@@ -62,6 +62,7 @@ const invoiceStatusConfig = {
   draft: { label: "Draft", variant: "secondary" as const },
   sent: { label: "Sent", variant: "default" as const },
   viewed: { label: "Viewed", variant: "default" as const },
+  partially_paid: { label: "Partially Paid", variant: "default" as const, color: "text-yellow-400" },  // Added
   paid: { label: "Paid", variant: "default" as const, color: "text-green-400" },
   overdue: { label: "Overdue", variant: "destructive" as const },
   cancelled: { label: "Cancelled", variant: "secondary" as const },
