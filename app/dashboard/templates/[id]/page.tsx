@@ -11,13 +11,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/dashboard/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { TemplatePreview, VariableReference } from "@/components/template/template-preview";
 import { trpc } from "@/lib/trpc";
-import { formatDate, cn } from "@/lib/utils";
+import { formatDate, formatDistanceToNow, cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Trash2, FileText, Receipt, Lock, Copy, Eye, Check, Sparkles, Star, Calendar, PenLine } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2, FileText, Receipt, Lock, Copy, Check, Star, Calendar, PenLine,
+  TrendingUp, Clock, Maximize2, Minimize2 } from "lucide-react";
 
 const templateSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -35,8 +38,8 @@ export default function TemplateDetailPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [editorExpanded, setEditorExpanded] = useState(false);
 
   const { data: template, isLoading, refetch } = trpc.template.get.useQuery({ id: templateId });
 
@@ -97,6 +100,28 @@ export default function TemplateDetailPage() {
     },
   });
 
+  const setDefaultTemplate = trpc.template.setDefault.useMutation({
+    onSuccess: (t) => {
+      toast.success(`"${t.name}" is now your default ${t.type} template`);
+      utils.template.get.invalidate({ id: templateId });
+      utils.template.list.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to set default");
+    },
+  });
+
+  const removeDefault = trpc.template.removeDefault.useMutation({
+    onSuccess: () => {
+      toast.success("Default removed");
+      utils.template.get.invalidate({ id: templateId });
+      utils.template.list.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to remove default");
+    },
+  });
+
   const onSubmit = async (data: TemplateFormData) => {
     setIsSubmitting(true);
     updateTemplate.mutate({ id: templateId, ...data });
@@ -112,6 +137,15 @@ export default function TemplateDetailPage() {
     duplicateTemplate.mutate({ id: templateId });
   };
 
+  const handleToggleDefault = () => {
+    if (!template) return;
+    if (template.isDefault) {
+      removeDefault.mutate({ id: templateId });
+    } else {
+      setDefaultTemplate.mutate({ id: templateId });
+    }
+  };
+
   const content = watch("content");
 
   if (isLoading) {
@@ -119,10 +153,13 @@ export default function TemplateDetailPage() {
       <>
         <Header title="Template" />
         <div className="flex-1 overflow-auto p-6">
-          <div className="mx-auto max-w-4xl space-y-6">
+          <div className="w-full max-w-none space-y-6">
             <Skeleton className="h-24 rounded-xl" />
-            <Skeleton className="h-48 rounded-xl" />
-            <Skeleton className="h-96 rounded-xl" />
+            <Skeleton className="h-32 rounded-xl" />
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Skeleton className="h-96 rounded-xl" />
+              <Skeleton className="h-96 rounded-xl" />
+            </div>
           </div>
         </div>
       </>
@@ -155,6 +192,7 @@ export default function TemplateDetailPage() {
 
   const isSystemTemplate = template.isSystem;
   const TypeIcon = template.type === "contract" ? FileText : Receipt;
+  const isSettingDefault = setDefaultTemplate.isPending || removeDefault.isPending;
 
   return (
     <>
@@ -196,7 +234,7 @@ export default function TemplateDetailPage() {
       />
 
       <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-4xl space-y-6">
+        <div className="space-y-6">
           {/* System Template Banner */}
           {isSystemTemplate && (
             <div className="flex items-center gap-4 rounded-xl border border-purple-500/30 bg-purple-500/10 p-4 animate-in slide-in-from-top duration-300">
@@ -225,6 +263,71 @@ export default function TemplateDetailPage() {
             </div>
           )}
 
+          {/* Usage Stats & Default Toggle */}
+          <div className="grid gap-4 sm:grid-cols-4">
+            <Card className="bg-card/50 backdrop-blur-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">Times Used</p>
+                  <TrendingUp className="h-4 w-4 text-green-500" />
+                </div>
+                <p className="text-2xl font-bold mt-1 text-green-500">
+                  {template.usageCount || 0}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="bg-card/50 backdrop-blur-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">Last Used</p>
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <p className="text-lg font-semibold mt-1">
+                  {template.lastUsedAt 
+                    ? formatDistanceToNow(new Date(template.lastUsedAt)) 
+                    : "Never"}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="bg-card/50 backdrop-blur-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">Created</p>
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <p className="text-lg font-semibold mt-1">
+                  {formatDate(template.createdAt)}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className={cn(
+              "bg-card/50 backdrop-blur-sm transition-all",
+              template.isDefault && "ring-2 ring-yellow-500/50 border-yellow-500/50"
+            )}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Default Template</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Auto-selected for new {template.type}s
+                    </p>
+                  </div>
+                  <Switch
+                    checked={template.isDefault || false}
+                    onCheckedChange={handleToggleDefault}
+                    disabled={isSettingDefault}
+                  />
+                </div>
+                {template.isDefault && (
+                  <Badge className="mt-2 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">
+                    <Star className="h-3 w-3 mr-1 fill-current" />
+                    Default
+                  </Badge>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Template Info */}
             <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
@@ -243,8 +346,8 @@ export default function TemplateDetailPage() {
                     <CardTitle className="flex items-center gap-2">
                       Template Details
                       {template.isDefault && (
-                        <Badge variant="default" className="ml-2">
-                          <Star className="h-3 w-3 mr-1" />
+                        <Badge variant="default" className="ml-2 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">
+                          <Star className="h-3 w-3 mr-1 fill-current" />
                           Default
                         </Badge>
                       )}
@@ -254,6 +357,13 @@ export default function TemplateDetailPage() {
                       <span>•</span>
                       <Calendar className="h-3 w-3" />
                       <span>Updated {formatDate(template.updatedAt)}</span>
+                      {template.usageCount > 0 && (
+                        <>
+                          <span>•</span>
+                          <TrendingUp className="h-3 w-3" />
+                          <span>Used {template.usageCount}×</span>
+                        </>
+                      )}
                     </CardDescription>
                   </div>
                 </div>
@@ -292,39 +402,38 @@ export default function TemplateDetailPage() {
               </CardContent>
             </Card>
 
-            {/* Template Content */}
-            <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
-              <CardHeader className="border-b border-border/50 bg-secondary/20">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <PenLine className="h-5 w-5" />
-                      Template Content
+            {/* Editor and Preview - Side by Side */}
+            <div className={cn(
+              "grid gap-6",
+              editorExpanded ? "lg:grid-cols-1" : "lg:grid-cols-2"
+            )}>
+              {/* Editor */}
+              <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
+                <CardHeader className="border-b border-border/50 bg-secondary/20 py-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <PenLine className="h-4 w-4" />
+                      Edit Template
                     </CardTitle>
-                    <CardDescription>
-                      Markdown format with variable placeholders
-                    </CardDescription>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setEditorExpanded(!editorExpanded)}
+                    >
+                      {editorExpanded ? (
+                        <Minimize2 className="h-4 w-4" />
+                      ) : (
+                        <Maximize2 className="h-4 w-4" />
+                      )}
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowPreview(!showPreview)}
-                  >
-                    <Eye className="h-4 w-4" />
-                    {showPreview ? "Edit" : "Preview"}
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                {showPreview ? (
-                  <div className="p-6 max-h-125 overflow-auto">
-                    <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{content}</pre>
-                  </div>
-                ) : (
+                </CardHeader>
+                <CardContent className="p-0">
                   <textarea
                     {...register("content")}
-                    rows={20}
+                    rows={editorExpanded ? 30 : 20}
                     disabled={isSystemTemplate || false}
                     className={cn(
                       "w-full p-4 bg-transparent border-0 text-sm font-mono resize-none focus:outline-none focus:ring-0",
@@ -332,47 +441,22 @@ export default function TemplateDetailPage() {
                       isSystemTemplate && "opacity-60 cursor-not-allowed"
                     )}
                   />
-                )}
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+
+              {/* Live Preview */}
+              {!editorExpanded && (
+                <TemplatePreview
+                  content={content || ""}
+                  type={template.type}
+                  defaultMode="preview"
+                  showDataSourceSelector={true}
+                />
+              )}
+            </div>
 
             {/* Variable Reference */}
-            <Card className="bg-card/50 backdrop-blur-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <Sparkles className="h-4 w-4" />
-                  Available Variables
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="flex flex-wrap gap-2">
-                  {template.type === "contract" ? (
-                    <>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientName}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientEmail}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientCompany}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{businessName}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{projectName}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{projectDescription}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{totalAmount}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{milestones}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{date}}"}</code>
-                    </>
-                  ) : (
-                    <>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{invoiceNumber}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientName}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientCompany}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{dueDate}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{lineItems}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{subtotal}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{taxRate}}"}</code>
-                      <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{total}}"}</code>
-                    </>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <VariableReference type={template.type} />
 
             {/* Submit */}
             {!isSystemTemplate && (
@@ -423,7 +507,13 @@ export default function TemplateDetailPage() {
           <DialogHeader>
             <DialogTitle>Delete Template</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{template.name}"? This action cannot be undone.
+              Are you sure you want to delete "{template.name}"? 
+              {template.usageCount > 0 && (
+                <span className="block mt-2 text-yellow-500">
+                  This template has been used {template.usageCount} time{template.usageCount !== 1 ? 's' : ''}.
+                </span>
+              )}
+              This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

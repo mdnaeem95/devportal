@@ -10,16 +10,26 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/dashboard/skeleton";
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
-import { formatDate, cn } from "@/lib/utils";
+import { formatDate, formatDistanceToNow, cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Plus, FileText, FileCode, ArrowUpRight, Copy, Lock, Loader2, Receipt, Sparkles, Star, Layers } from "lucide-react";
+import { Plus, FileText, FileCode, ArrowUpRight, Copy, Lock, Loader2, Receipt, Sparkles, Star,
+  Layers, MoreVertical, TrendingUp, Clock, ChevronDown, Check } from "lucide-react";
 
 type TabId = "contract" | "invoice";
+type SortOption = "created" | "name" | "usage" | "lastUsed";
 
 const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "contract", label: "Contract Templates", icon: FileText },
   { id: "invoice", label: "Invoice Templates", icon: Receipt },
+];
+
+const sortOptions: { id: SortOption; label: string; icon: React.ElementType }[] = [
+  { id: "created", label: "Date Created", icon: Clock },
+  { id: "name", label: "Name", icon: FileText },
+  { id: "usage", label: "Most Used", icon: TrendingUp },
+  { id: "lastUsed", label: "Recently Used", icon: Clock },
 ];
 
 function TemplateCardSkeleton() {
@@ -57,11 +67,16 @@ export default function TemplatesPage() {
   const router = useRouter();
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandPalette();
   const [activeTab, setActiveTab] = useState<TabId>("contract");
+  const [sortBy, setSortBy] = useState<SortOption>("created");
   const [duplicating, setDuplicating] = useState<string | null>(null);
+  const [settingDefault, setSettingDefault] = useState<string | null>(null);
 
   const { data: templates, isLoading, refetch } = trpc.template.list.useQuery({
     type: activeTab,
+    sortBy,
   });
+
+  const utils = trpc.useUtils();
 
   const duplicateTemplate = trpc.template.duplicate.useMutation({
     onSuccess: (template) => {
@@ -76,11 +91,46 @@ export default function TemplatesPage() {
     onSettled: () => setDuplicating(null),
   });
 
+  const setDefaultTemplate = trpc.template.setDefault.useMutation({
+    onSuccess: (template) => {
+      toast.success(`"${template.name}" is now your default ${template.type} template`);
+      utils.template.list.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to set default");
+      setSettingDefault(null);
+    },
+    onSettled: () => setSettingDefault(null),
+  });
+
+  const removeDefault = trpc.template.removeDefault.useMutation({
+    onSuccess: () => {
+      toast.success("Default removed");
+      utils.template.list.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to remove default");
+    },
+  });
+
   const handleDuplicate = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDuplicating(id);
     duplicateTemplate.mutate({ id });
+  };
+
+  const handleSetDefault = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSettingDefault(id);
+    setDefaultTemplate.mutate({ id });
+  };
+
+  const handleRemoveDefault = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    removeDefault.mutate({ id });
   };
 
   const systemTemplates = templates?.filter((t) => t.isSystem) || [];
@@ -91,7 +141,10 @@ export default function TemplatesPage() {
     system: systemTemplates.length,
     custom: customTemplates.length,
     total: templates?.length ?? 0,
+    totalUsage: templates?.reduce((sum, t) => sum + (t.usageCount || 0), 0) ?? 0,
   };
+
+  const currentSort = sortOptions.find((s) => s.id === sortBy);
 
   return (
     <>
@@ -117,9 +170,10 @@ export default function TemplatesPage() {
       <div className="flex-1 overflow-auto">
         {/* Stats */}
         <div className="border-b border-border/50 bg-card/30 p-6">
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-4">
             {isLoading ? (
               <>
+                <StatCardSkeleton />
                 <StatCardSkeleton />
                 <StatCardSkeleton />
                 <StatCardSkeleton />
@@ -159,33 +213,70 @@ export default function TemplatesPage() {
                     </p>
                   </CardContent>
                 </Card>
+                <Card className="bg-card/50 backdrop-blur-sm transition-all hover:bg-card hover:-translate-y-0.5 hover:shadow-lg hover:shadow-green-500/10">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground">Total Uses</p>
+                      <TrendingUp className="h-4 w-4 text-green-500" />
+                    </div>
+                    <p className="text-2xl font-bold mt-1 text-green-500">
+                      <AnimatedNumber value={stats.totalUsage} />
+                    </p>
+                  </CardContent>
+                </Card>
               </>
             )}
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs and Sort */}
         <div className="border-b border-border/50 bg-card/30 px-6">
-          <nav className="flex gap-1">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative",
-                  activeTab === tab.id
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <tab.icon className="h-4 w-4" />
-                {tab.label}
-                {activeTab === tab.id && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-                )}
-              </button>
-            ))}
-          </nav>
+          <div className="flex items-center justify-between">
+            <nav className="flex gap-1">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative",
+                    activeTab === tab.id
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <tab.icon className="h-4 w-4" />
+                  {tab.label}
+                  {activeTab === tab.id && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+                  )}
+                </button>
+              ))}
+            </nav>
+
+            {/* Sort Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-2">
+                  {currentSort && <currentSort.icon className="h-4 w-4" />}
+                  {currentSort?.label}
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {sortOptions.map((option) => (
+                  <DropdownMenuItem
+                    key={option.id}
+                    onClick={() => setSortBy(option.id)}
+                    className={cn(sortBy === option.id && "bg-secondary")}
+                  >
+                    <option.icon className="h-4 w-4 mr-2" />
+                    {option.label}
+                    {sortBy === option.id && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         <div className="p-6">
@@ -206,52 +297,117 @@ export default function TemplatesPage() {
                   </h2>
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {systemTemplates.map((template, index) => (
-                      <Card
+                      <Link
                         key={template.id}
-                        className="bg-card/50 backdrop-blur-sm transition-all hover:bg-card hover:border-border hover:shadow-lg hover:-translate-y-0.5 group relative animate-in fade-in slide-in-from-bottom-2 duration-300"
+                        href={`/dashboard/templates/${template.id}`}
+                        className="block animate-in fade-in slide-in-from-bottom-2 duration-300"
                         style={{ animationDelay: `${index * 50}ms`, animationFillMode: "backwards" }}
                       >
-                        <CardContent className="p-6">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/20 transition-transform group-hover:scale-110">
-                                <FileCode className="h-5 w-5 text-purple-400" />
-                              </div>
-                              <div>
-                                <h3 className="font-semibold">{template.name}</h3>
-                                <Badge variant="secondary" className="mt-1">
-                                  <Lock className="h-3 w-3 mr-1" />
-                                  System
-                                </Badge>
-                              </div>
-                            </div>
-                          </div>
-                          {template.description && (
-                            <p className="mt-3 text-sm text-muted-foreground line-clamp-2">
-                              {template.description}
-                            </p>
+                        <Card
+                          className={cn(
+                            "bg-card/50 backdrop-blur-sm transition-all hover:bg-card hover:border-border hover:shadow-lg hover:-translate-y-0.5 group relative h-full",
+                            template.isDefault && "ring-2 ring-yellow-500/50 border-yellow-500/50"
                           )}
-                          <div className="mt-4 pt-4 border-t border-border/50 flex items-center justify-between">
-                            <span className="text-xs text-muted-foreground">
-                              Read-only
-                            </span>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={(e) => handleDuplicate(template.id, e)}
-                              disabled={duplicating === template.id}
-                              className="transition-all hover:border-primary hover:text-primary"
-                            >
-                              {duplicating === template.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Copy className="h-4 w-4" />
-                              )}
-                              Duplicate
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
+                        >
+                          <CardContent className="p-6">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-center gap-3">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/20 transition-transform group-hover:scale-110">
+                                  <FileCode className="h-5 w-5 text-purple-400" />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h3 className="font-semibold group-hover:text-purple-400 transition-colors">
+                                      {template.name}
+                                    </h3>
+                                    <ArrowUpRight className="h-4 w-4 text-muted-foreground opacity-0 -translate-x-2 transition-all group-hover:opacity-100 group-hover:translate-x-0" />
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <Badge variant="secondary">
+                                      <Lock className="h-3 w-3 mr-1" />
+                                      System
+                                    </Badge>
+                                    {template.isDefault && (
+                                      <Badge variant="default" className="bg-yellow-500/20 text-yellow-500 border-yellow-500/30">
+                                        <Star className="h-3 w-3 mr-1 fill-current" />
+                                        Default
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={(e) => e.preventDefault()}
+                                  >
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={(e) => handleDuplicate(template.id, e)}>
+                                    <Copy className="h-4 w-4 mr-2" />
+                                    Duplicate
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  {template.isDefault ? (
+                                    <DropdownMenuItem onClick={(e) => handleRemoveDefault(template.id, e)}>
+                                      <Star className="h-4 w-4 mr-2" />
+                                      Remove Default
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem onClick={(e) => handleSetDefault(template.id, e)}>
+                                      <Star className="h-4 w-4 mr-2" />
+                                      Set as Default
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                            {template.description && (
+                              <p className="mt-3 text-sm text-muted-foreground line-clamp-2">
+                                {template.description}
+                              </p>
+                            )}
+                            <div className="mt-4 pt-4 border-t border-border/50 flex items-center justify-between">
+                              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                {template.usageCount > 0 && (
+                                  <span className="flex items-center gap-1">
+                                    <TrendingUp className="h-3 w-3" />
+                                    Used {template.usageCount}×
+                                  </span>
+                                )}
+                                {template.lastUsedAt && (
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="h-3 w-3" />
+                                    {formatDistanceToNow(new Date(template.lastUsedAt))}
+                                  </span>
+                                )}
+                                {!template.usageCount && !template.lastUsedAt && (
+                                  <span>Click to preview</span>
+                                )}
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => handleDuplicate(template.id, e)}
+                                disabled={duplicating === template.id}
+                                className="transition-all hover:border-primary hover:text-primary"
+                              >
+                                {duplicating === template.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Copy className="h-4 w-4" />
+                                )}
+                                Duplicate
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </Link>
                     ))}
                   </div>
                 </div>
@@ -306,7 +462,10 @@ export default function TemplatesPage() {
                         className="block animate-in fade-in slide-in-from-bottom-2 duration-300"
                         style={{ animationDelay: `${(systemTemplates.length + index) * 50}ms`, animationFillMode: "backwards" }}
                       >
-                        <Card className="bg-card/50 backdrop-blur-sm transition-all hover:bg-card hover:border-border hover:shadow-lg hover:-translate-y-0.5 group h-full">
+                        <Card className={cn(
+                          "bg-card/50 backdrop-blur-sm transition-all hover:bg-card hover:border-border hover:shadow-lg hover:-translate-y-0.5 group h-full",
+                          template.isDefault && "ring-2 ring-yellow-500/50 border-yellow-500/50"
+                        )}>
                           <CardContent className="p-6">
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex items-center gap-3">
@@ -321,8 +480,8 @@ export default function TemplatesPage() {
                                     <ArrowUpRight className="h-4 w-4 text-muted-foreground opacity-0 -translate-x-2 transition-all group-hover:opacity-100 group-hover:translate-x-0" />
                                   </div>
                                   {template.isDefault && (
-                                    <Badge variant="default" className="mt-1">
-                                      <Star className="h-3 w-3 mr-1" />
+                                    <Badge variant="default" className="mt-1 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">
+                                      <Star className="h-3 w-3 mr-1 fill-current" />
                                       Default
                                     </Badge>
                                   )}
@@ -334,9 +493,26 @@ export default function TemplatesPage() {
                                 {template.description}
                               </p>
                             )}
-                            <div className="mt-4 pt-4 border-t border-border/50">
+                            <div className="mt-4 pt-4 border-t border-border/50 flex items-center justify-between">
+                              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                {template.usageCount > 0 && (
+                                  <span className="flex items-center gap-1">
+                                    <TrendingUp className="h-3 w-3 text-green-500" />
+                                    Used {template.usageCount}×
+                                  </span>
+                                )}
+                                {template.lastUsedAt && (
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="h-3 w-3" />
+                                    {formatDistanceToNow(new Date(template.lastUsedAt))}
+                                  </span>
+                                )}
+                                {!template.usageCount && !template.lastUsedAt && (
+                                  <span>Never used</span>
+                                )}
+                              </div>
                               <span className="text-xs text-muted-foreground">
-                                Updated {formatDate(template.updatedAt)}
+                                {formatDate(template.updatedAt)}
                               </span>
                             </div>
                           </CardContent>

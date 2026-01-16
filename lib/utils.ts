@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { formatDistanceToNow as dateFnsFormatDistance } from "date-fns";
 
 /**
  * Merge Tailwind classes with clsx
@@ -71,4 +72,11 @@ export function getInitials(name: string): string {
 export function truncate(text: string, length: number): string {
   if (text.length <= length) return text;
   return text.slice(0, length) + "...";
+}
+
+/**
+ * Format a date as relative time (e.g., "2 days ago", "just now")
+ */
+export function formatDistanceToNow(date: Date): string {
+ return dateFnsFormatDistance(date, { addSuffix: true });
 }

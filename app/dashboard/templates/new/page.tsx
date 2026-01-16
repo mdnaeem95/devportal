@@ -10,17 +10,20 @@ import { Header } from "@/components/dashboard/header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { TemplatePreview, VariableReference } from "@/components/template/template-preview";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, FileText, Receipt, Check, ChevronRight, Eye, PenLine, Sparkles, FileSignature } from "lucide-react";
+import { ArrowLeft, Loader2, FileText, Receipt, Check, ChevronRight, PenLine, FileSignature, Star, Maximize2, Minimize2 } from "lucide-react";
 
 const templateSchema = z.object({
   type: z.enum(["contract", "invoice"]),
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
   content: z.string().min(1, "Content is required"),
+  setAsDefault: z.boolean().optional(),
 });
 
 type TemplateFormData = z.infer<typeof templateSchema>;
@@ -121,8 +124,8 @@ export default function NewTemplatePage() {
   const typeParam = searchParams.get("type") as "contract" | "invoice" | null;
 
   const [step, setStep] = useState<"type" | "details" | "content">(typeParam ? "details" : "type");
-  const [showPreview, setShowPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editorExpanded, setEditorExpanded] = useState(false);
 
   const {
     register,
@@ -137,12 +140,14 @@ export default function NewTemplatePage() {
       name: "",
       description: "",
       content: typeParam === "invoice" ? defaultInvoiceContent : defaultContractContent,
+      setAsDefault: false,
     },
   });
 
   const selectedType = watch("type");
   const watchName = watch("name");
   const watchContent = watch("content");
+  const watchSetAsDefault = watch("setAsDefault");
 
   const handleTypeChange = (type: "contract" | "invoice") => {
     setValue("type", type);
@@ -151,7 +156,11 @@ export default function NewTemplatePage() {
 
   const createTemplate = trpc.template.create.useMutation({
     onSuccess: (template) => {
-      toast.success("Template created!");
+      toast.success(
+        watchSetAsDefault 
+          ? `Template created and set as your default ${template.type} template!` 
+          : "Template created!"
+      );
       router.push(`/dashboard/templates/${template.id}`);
     },
     onError: (error) => {
@@ -186,14 +195,14 @@ export default function NewTemplatePage() {
       />
 
       <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-4xl">
+        <div className="mx-auto max-w-6xl">
           {/* Progress Steps */}
           <div className="mb-8 flex items-center justify-center gap-2">
             <button
               type="button"
               onClick={() => setStep("type")}
               className={cn(
-                "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                "flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
                 step === "type"
                   ? "bg-primary text-primary-foreground shadow-lg"
                   : "bg-secondary text-muted-foreground hover:text-foreground"
@@ -210,7 +219,7 @@ export default function NewTemplatePage() {
               onClick={() => canProceedToDetails && setStep("details")}
               disabled={!canProceedToDetails}
               className={cn(
-                "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                "flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
                 step === "details"
                   ? "bg-primary text-primary-foreground shadow-lg"
                   : !canProceedToDetails
@@ -229,7 +238,7 @@ export default function NewTemplatePage() {
               onClick={() => canProceedToContent && setStep("content")}
               disabled={!canProceedToContent}
               className={cn(
-                "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                "flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
                 step === "content"
                   ? "bg-primary text-primary-foreground shadow-lg"
                   : !canProceedToContent
@@ -260,7 +269,7 @@ export default function NewTemplatePage() {
                         type="button"
                         onClick={() => handleTypeChange("contract")}
                         className={cn(
-                          "flex flex-col items-center gap-4 rounded-xl border p-6 transition-all text-center",
+                          "flex flex-col cursor-pointer items-center gap-4 rounded-xl border p-6 transition-all text-center",
                           selectedType === "contract"
                             ? "border-primary bg-primary/5 ring-2 ring-primary/20 shadow-lg shadow-primary/10"
                             : "border-border/50 bg-secondary/20 hover:border-border hover:bg-secondary/40"
@@ -298,7 +307,7 @@ export default function NewTemplatePage() {
                         type="button"
                         onClick={() => handleTypeChange("invoice")}
                         className={cn(
-                          "flex flex-col items-center gap-4 rounded-xl border p-6 transition-all text-center",
+                          "flex flex-col cursor-pointer items-center gap-4 rounded-xl border p-6 transition-all text-center",
                           selectedType === "invoice"
                             ? "border-primary bg-primary/5 ring-2 ring-primary/20 shadow-lg shadow-primary/10"
                             : "border-border/50 bg-secondary/20 hover:border-border hover:bg-secondary/40"
@@ -400,6 +409,24 @@ export default function NewTemplatePage() {
                         Optional. Helps you remember what this template is for.
                       </p>
                     </div>
+
+                    {/* Set as Default */}
+                    <div className="flex items-center justify-between rounded-lg border border-border/50 bg-secondary/20 p-4">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="setAsDefault" className="flex items-center gap-2 cursor-pointer">
+                          <Star className={cn("h-4 w-4", watchSetAsDefault && "text-yellow-500 fill-current")} />
+                          Set as Default
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          This template will be auto-selected when creating new {selectedType}s
+                        </p>
+                      </div>
+                      <Switch
+                        id="setAsDefault"
+                        checked={watchSetAsDefault || false}
+                        onCheckedChange={(checked) => setValue("setAsDefault", checked)}
+                      />
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -431,7 +458,15 @@ export default function NewTemplatePage() {
                         <TypeIcon className="h-6 w-6 text-white" />
                       </div>
                       <div className="flex-1">
-                        <h3 className="font-semibold">{watchName || "Untitled Template"}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold">{watchName || "Untitled Template"}</h3>
+                          {watchSetAsDefault && (
+                            <span className="inline-flex items-center gap-1 text-xs text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
+                              <Star className="h-3 w-3 fill-current" />
+                              Default
+                            </span>
+                          )}
+                        </div>
                         <p className="text-sm text-muted-foreground capitalize">
                           {selectedType} Template
                         </p>
@@ -443,90 +478,70 @@ export default function NewTemplatePage() {
                   </CardContent>
                 </Card>
 
-                {/* Content Editor */}
-                <div className="grid gap-6 lg:grid-cols-2">
+                {/* Editor and Live Preview - Side by Side */}
+                <div className={cn(
+                  "grid gap-6",
+                  editorExpanded ? "lg:grid-cols-1" : "lg:grid-cols-2"
+                )}>
                   {/* Editor */}
                   <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
                     <CardHeader className="border-b border-border/50 bg-secondary/20 py-3">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <PenLine className="h-4 w-4" />
-                        Edit Template
-                      </CardTitle>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <PenLine className="h-4 w-4" />
+                          Edit Template
+                        </CardTitle>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setEditorExpanded(!editorExpanded)}
+                        >
+                          {editorExpanded ? (
+                            <Minimize2 className="h-4 w-4" />
+                          ) : (
+                            <Maximize2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
                     </CardHeader>
                     <CardContent className="p-0">
                       <textarea
                         {...register("content")}
-                        rows={20}
-                        className="w-full min-h-112.5 p-4 font-mono text-sm bg-transparent border-0 resize-none focus:outline-none focus:ring-0"
+                        rows={editorExpanded ? 30 : 20}
+                        className="w-full p-4 font-mono text-sm bg-transparent border-0 resize-none focus:outline-none focus:ring-0"
                         placeholder="Enter template content..."
                       />
                     </CardContent>
                   </Card>
 
-                  {/* Preview */}
-                  <Card className="bg-card/50 backdrop-blur-sm overflow-hidden">
-                    <CardHeader className="border-b border-border/50 bg-secondary/20 py-3">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <Eye className="h-4 w-4" />
-                        Preview
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-4 max-h-112.5 overflow-auto">
-                      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">
-                        {watchContent}
-                      </pre>
-                    </CardContent>
-                  </Card>
+                  {/* Live Preview */}
+                  {!editorExpanded && (
+                    <TemplatePreview
+                      content={watchContent || ""}
+                      type={selectedType}
+                      defaultMode="preview"
+                      showDataSourceSelector={true}
+                    />
+                  )}
                 </div>
 
                 {/* Variable Reference */}
-                <Card className="bg-card/50 backdrop-blur-sm">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <Sparkles className="h-4 w-4" />
-                      Available Variables
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <div className="flex flex-wrap gap-2">
-                      {selectedType === "contract" ? (
-                        <>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientName}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientEmail}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientCompany}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{businessName}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{projectName}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{projectDescription}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{totalAmount}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{milestones}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{date}}"}</code>
-                        </>
-                      ) : (
-                        <>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{invoiceNumber}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientName}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{clientCompany}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{businessName}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{invoiceDate}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{dueDate}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{lineItems}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{subtotal}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{taxRate}}"}</code>
-                          <code className="text-xs bg-secondary px-2 py-1 rounded font-mono">{"{{total}}"}</code>
-                        </>
-                      )}
-                    </div>
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      These variables will be replaced with actual values when the template is used.
-                    </p>
-                  </CardContent>
-                </Card>
+                <VariableReference type={selectedType} />
 
                 {/* Submit */}
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/50 p-4">
-                  <p className="text-sm text-muted-foreground">
-                    Your template will be saved and available for use immediately.
-                  </p>
+                  <div className="text-sm text-muted-foreground">
+                    {watchSetAsDefault ? (
+                      <span className="flex items-center gap-2">
+                        <Star className="h-4 w-4 text-yellow-500 fill-current" />
+                        Will be set as your default {selectedType} template
+                      </span>
+                    ) : (
+                      "Your template will be saved and available for use immediately."
+                    )}
+                  </div>
                   <div className="flex items-center gap-3">
                     <Button type="button" variant="ghost" onClick={() => setStep("details")}>
                       Back
