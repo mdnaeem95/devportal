@@ -4,6 +4,7 @@ import { relations } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { users } from "./users";
 import { clients } from "./clients";
+import { milestones } from "./milestones";
 
 export const projectStatusEnum = pgEnum("project_status", [
   "draft",
@@ -41,7 +42,7 @@ export const projects = pgTable("projects", {
     .$onUpdate(() => new Date()),
 });
 
-export const projectsRelations = relations(projects, ({ one }) => ({
+export const projectsRelations = relations(projects, ({ one, many }) => ({
   user: one(users, {
     fields: [projects.userId],
     references: [users.id],
@@ -50,6 +51,7 @@ export const projectsRelations = relations(projects, ({ one }) => ({
     fields: [projects.clientId],
     references: [clients.id],
   }),
+  milestones: many(milestones),
 }));
 
 export type Project = typeof projects.$inferSelect;
