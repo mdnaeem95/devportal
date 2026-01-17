@@ -40,7 +40,7 @@ export function BusinessTab({ settings, onRefetch }: BusinessTabProps) {
   }, [settings]);
 
   // Mutations
-  const updateBusiness = trpc.settings.updateBusiness.useMutation({
+  const updateBusiness = trpc.settings.update.useMutation({
     onSuccess: () => {
       toast.success("Business settings saved");
       onRefetch();
@@ -105,11 +105,15 @@ export function BusinessTab({ settings, onRefetch }: BusinessTabProps) {
         headers: { "Content-Type": logoFile.type },
       });
 
-      if (!uploadResponse.ok) throw new Error("Failed to upload file");
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      }
+      
       await updateLogo.mutateAsync({ logoUrl: fileUrl });
     } catch (error) {
       console.error("[Settings] Logo upload error:", error);
-      toast.error("Failed to upload logo");
+      const message = error instanceof Error ? error.message : "Failed to upload logo";
+      toast.error(message);
     } finally {
       setIsUploadingLogo(false);
     }

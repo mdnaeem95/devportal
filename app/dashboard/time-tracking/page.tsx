@@ -294,7 +294,7 @@ export default function TimeTrackingPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-            <Link href="/dashboard/time-tracking/settings">
+            <Link href="/dashboard/settings">
               <Button variant="outline" size="icon">
                 <Shield className="h-4 w-4" />
               </Button>

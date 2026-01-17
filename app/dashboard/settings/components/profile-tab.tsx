@@ -1,12 +1,13 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
+import { useUser, useClerk } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ExternalLink } from "lucide-react";
+import { Settings } from "lucide-react";
 
 export function ProfileTab() {
   const { user } = useUser();
+  const { openUserProfile } = useClerk();
 
   return (
     <Card className="bg-card/50 backdrop-blur-sm">
@@ -17,6 +18,7 @@ export function ProfileTab() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Avatar and Info */}
         <div className="flex items-center gap-4">
           <div className="relative">
             {user?.imageUrl ? (
@@ -36,14 +38,18 @@ export function ProfileTab() {
             <p className="text-sm text-muted-foreground">
               {user?.primaryEmailAddress?.emailAddress}
             </p>
-            <Button variant="outline" size="sm" className="mt-2" asChild>
-              <a href="https://accounts.clerk.com" target="_blank" rel="noopener">
-                <ExternalLink className="h-4 w-4" />
-                Manage Account
-              </a>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-2"
+              onClick={() => openUserProfile()}
+            >
+              <Settings className="h-4 w-4" />
+              Manage Account
             </Button>
           </div>
         </div>
+
         <div className="pt-4 border-t border-border/50">
           <p className="text-sm text-muted-foreground">
             Profile information is managed through your Clerk account.
