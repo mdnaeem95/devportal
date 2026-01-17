@@ -306,6 +306,7 @@ export default function ContractDetailPage() {
 
   // Data fetching
   const { data: contract, isLoading, refetch } = trpc.contract.get.useQuery({ id: contractId });
+  const { data: settings } = trpc.settings.get.useQuery();
 
   const {
     register,
@@ -525,6 +526,7 @@ export default function ContractDetailPage() {
   const isPending = ["sent", "viewed"].includes(contract.status);
   const isDeclined = contract.status === "declined";
   const hasDeveloperSigned = !!contract.developerSignature;
+  const showSequentialSigningCard = (settings?.contractDefaults?.sequentialSigning ?? true) || hasDeveloperSigned;
 
   // Calculate hours since last reminder
   const hoursSinceLastReminder = contract.lastReminderAt 
@@ -669,7 +671,7 @@ export default function ContractDetailPage() {
           {/* NEW: Developer Signature Card (Draft Only) */}
           {/* ============================================ */}
           
-          {isDraft && (
+          {isDraft && showSequentialSigningCard && (
             <Card className={cn(
               "bg-card/50 backdrop-blur-sm overflow-hidden transition-all",
               hasDeveloperSigned 
@@ -1166,45 +1168,47 @@ export default function ContractDetailPage() {
             </DialogDescription>
           </DialogHeader>
           
-          {/* Show developer signature status */}
-          <div className={cn(
-            "rounded-lg p-4",
-            hasDeveloperSigned ? "bg-green-500/10 border border-green-500/30" : "bg-secondary/50"
-          )}>
-            <div className="flex items-center gap-3">
-              {hasDeveloperSigned ? (
-                <>
-                  <CheckCircle2 className="h-5 w-5 text-green-400" />
-                  <div>
-                    <p className="font-medium text-green-400">You've signed this contract</p>
-                    <p className="text-sm text-green-400/80">
-                      The client will see your signature when they open the contract
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="h-5 w-5 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium">You haven't signed yet</p>
-                    <p className="text-sm text-muted-foreground">
-                      Consider signing first to show commitment
-                    </p>
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => {
-                      setShowSendDialog(false);
-                      setShowSignDialog(true);
-                    }}
-                  >
-                    Sign Now
-                  </Button>
-                </>
-              )}
+          {/* Show developer signature status - only when sequential signing enabled */}
+          {(settings?.contractDefaults?.sequentialSigning ?? true) && (
+            <div className={cn(
+              "rounded-lg p-4",
+              hasDeveloperSigned ? "bg-green-500/10 border border-green-500/30" : "bg-secondary/50"
+            )}>
+              <div className="flex items-center gap-3">
+                {hasDeveloperSigned ? (
+                  <>
+                    <CheckCircle2 className="h-5 w-5 text-green-400" />
+                    <div>
+                      <p className="font-medium text-green-400">You've signed this contract</p>
+                      <p className="text-sm text-green-400/80">
+                        The client will see your signature when they open the contract
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium">You haven't signed yet</p>
+                      <p className="text-sm text-muted-foreground">
+                        Consider signing first to show commitment
+                      </p>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setShowSendDialog(false);
+                        setShowSignDialog(true);
+                      }}
+                    >
+                      Sign Now
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          )}
           
           <div className="rounded-lg bg-secondary/50 p-4">
             <div className="flex items-center gap-3">

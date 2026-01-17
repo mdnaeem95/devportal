@@ -167,3 +167,4 @@ export const invoicePaymentsRelations = relations(invoicePayments, ({ one }) => 
     references: [users.id],
   }),
 }));
+

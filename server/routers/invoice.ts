@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { router, protectedProcedure, publicProcedure } from "../trpc";
-import { invoices, invoiceReminders, invoicePayments, clients, projects, milestones, users } from "../db/schema";
-import { eq, desc, and, sum } from "drizzle-orm";
+import { invoices, invoiceReminders, invoicePayments, clients, milestones, users } from "../db/schema";
+import { eq, desc, and } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import { sendInvoiceEmail, sendInvoicePaidEmails, sendPaymentReminderEmail, sendPartialPaymentEmails } from "@/lib/emails";
@@ -42,12 +42,12 @@ function formatDate(date: Date): string {
 }
 
 // Generate invoice number
-function generateInvoiceNumber(): string {
+function generateInvoiceNumber(prefix: string = "INV"): string {
   const date = new Date();
   const year = date.getFullYear().toString().slice(-2);
   const month = (date.getMonth() + 1).toString().padStart(2, "0");
   const random = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
-  return `INV-${year}${month}-${random}`;
+  return `${prefix}-${year}${month}-${random}`;
 }
 
 export const invoiceRouter = router({
@@ -193,10 +193,12 @@ export const invoiceRouter = router({
   createFromMilestone: protectedProcedure
     .input(z.object({ 
       milestoneId: z.string(),
-      allowPartialPayments: z.boolean().default(false),
+      // Optional overrides - if not provided, settings defaults are used
+      allowPartialPayments: z.boolean().optional(),
       minimumPaymentAmount: z.number().min(0).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // Get milestone with project and client
       const milestone = await ctx.db.query.milestones.findFirst({
         where: eq(milestones.id, input.milestoneId),
         with: {
@@ -216,7 +218,34 @@ export const invoiceRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
       }
 
-      // Create line item from milestone
+      // Check if milestone already invoiced
+      if (milestone.status === "invoiced" || milestone.status === "paid") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This milestone has already been invoiced",
+        });
+      }
+
+      // ========== FETCH USER SETTINGS ==========
+      const user = await ctx.db.query.users.findFirst({
+        where: eq(users.id, ctx.user.id),
+      });
+
+      if (!user) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+      }
+
+      // Extract settings with sensible defaults
+      const paymentTermsDays = user.defaultPaymentTerms ?? 14;
+      const taxRate = user.defaultTaxRate ? parseFloat(user.defaultTaxRate) : 0;
+      const currency = user.currency || "USD";
+      const invoiceNotes = user.invoiceNotes || null;
+      const invoicePrefix = user.invoicePrefix || "INV";
+      
+      // Partial payments - use input override if provided, otherwise use settings
+      const allowPartialPayments = input.allowPartialPayments ?? (user.defaultAllowPartialPayments ?? false);
+
+      // ========== CREATE LINE ITEM FROM MILESTONE ==========
       const lineItems = [
         {
           id: nanoid(),
@@ -227,10 +256,30 @@ export const invoiceRouter = router({
         },
       ];
 
-      // Due in 14 days
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + 14);
+      // ========== CALCULATE TOTALS WITH TAX ==========
+      const subtotal = milestone.amount;
+      const taxAmount = taxRate > 0 ? Math.round(subtotal * (taxRate / 100)) : 0;
+      const total = subtotal + taxAmount;
 
+      // Calculate minimum payment amount from percentage if not provided
+      let minimumPaymentAmount = input.minimumPaymentAmount;
+      if (minimumPaymentAmount === undefined && allowPartialPayments && user.defaultMinimumPaymentPercent) {
+        minimumPaymentAmount = Math.round((total * user.defaultMinimumPaymentPercent) / 100);
+      }
+
+      // Validate minimum payment amount
+      if (allowPartialPayments && minimumPaymentAmount && minimumPaymentAmount > total) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Minimum payment amount cannot exceed invoice total",
+        });
+      }
+
+      // ========== CALCULATE DUE DATE FROM SETTINGS ==========
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + paymentTermsDays);
+
+      // ========== CREATE INVOICE ==========
       const [invoice] = await ctx.db
         .insert(invoices)
         .values({
@@ -238,24 +287,30 @@ export const invoiceRouter = router({
           clientId: milestone.project.clientId,
           projectId: milestone.projectId,
           milestoneId: milestone.id,
-          invoiceNumber: generateInvoiceNumber(),
+          invoiceNumber: generateInvoiceNumber(invoicePrefix),
           lineItems,
-          subtotal: milestone.amount,
-          tax: 0,
-          total: milestone.amount,
-          currency: "USD",
+          subtotal,
+          tax: taxAmount,
+          taxRate: taxRate > 0 ? taxRate.toString() : null,
+          total,
+          currency,
           dueDate,
+          notes: invoiceNotes,
           status: "draft",
-          allowPartialPayments: input.allowPartialPayments,
-          minimumPaymentAmount: input.minimumPaymentAmount,
+          payToken: nanoid(32),
+          allowPartialPayments,
+          minimumPaymentAmount: minimumPaymentAmount || null,
           paidAmount: 0,
         })
         .returning();
 
-      // Update milestone status
+      // ========== UPDATE MILESTONE STATUS ==========
       await ctx.db
         .update(milestones)
-        .set({ status: "invoiced" })
+        .set({ 
+          status: "invoiced",
+          updatedAt: new Date(),
+        })
         .where(eq(milestones.id, milestone.id));
 
       return invoice;

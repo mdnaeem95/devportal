@@ -109,6 +109,7 @@ export const contractRouter = router({
   // ============================================
 
   // Create contract from template
+  // ✅ UPDATED: Now applies user settings for autoRemind
   createFromTemplate: protectedProcedure
     .input(
       z.object({
@@ -138,10 +139,13 @@ export const contractRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Template not found" });
       }
 
-      // Get user info for variables
+      // Get user info for variables AND settings
       const user = await ctx.db.query.users.findFirst({
         where: eq(users.id, ctx.user.id),
       });
+
+      // ✅ Get contract settings from user
+      const autoRemind = user?.contractAutoRemind ?? true;
 
       // Get project if provided
       let project = null;
@@ -187,7 +191,7 @@ export const contractRouter = router({
         content = content.replace(new RegExp(`{{${key}}}`, "g"), value);
       }
 
-      // Create contract
+      // Create contract with user's default autoRemind setting
       const [contract] = await ctx.db
         .insert(contracts)
         .values({
@@ -198,6 +202,7 @@ export const contractRouter = router({
           name: input.name,
           content,
           status: "draft",
+          autoRemind, // ✅ Apply user setting
         })
         .returning();
 
@@ -205,6 +210,7 @@ export const contractRouter = router({
     }),
 
   // Create blank contract
+  // ✅ UPDATED: Now applies user settings for autoRemind
   create: protectedProcedure
     .input(
       z.object({
@@ -224,6 +230,14 @@ export const contractRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
       }
 
+      // ✅ Get user settings
+      const user = await ctx.db.query.users.findFirst({
+        where: eq(users.id, ctx.user.id),
+      });
+
+      // ✅ Get contract settings from user
+      const autoRemind = user?.contractAutoRemind ?? true;
+
       const [contract] = await ctx.db
         .insert(contracts)
         .values({
@@ -233,6 +247,7 @@ export const contractRouter = router({
           name: input.name,
           content: input.content,
           status: "draft",
+          autoRemind, // ✅ Apply user setting
         })
         .returning();
 
@@ -364,6 +379,7 @@ export const contractRouter = router({
   // ============================================
 
   // Send contract for signature
+  // ✅ UPDATED: Now uses user's defaultContractExpiryDays setting
   send: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
@@ -386,15 +402,18 @@ export const contractRouter = router({
         });
       }
 
-      // Get user/business info
+      // Get user/business info AND settings
       const user = await ctx.db.query.users.findFirst({
         where: eq(users.id, ctx.user.id),
       });
 
+      // ✅ Use user's expiry setting (default to 30 days)
+      const expiryDays = user?.defaultContractExpiryDays ?? 30;
+
       // Generate sign token
       const signToken = nanoid(32);
       const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 30); // 30 days to sign
+      expiresAt.setDate(expiresAt.getDate() + expiryDays); // ✅ Use setting instead of hardcoded 30
 
       // Update contract
       const [updated] = await ctx.db
@@ -498,7 +517,7 @@ export const contractRouter = router({
         reminderNumber: contract.reminderCount + 1,
       });
 
-      // Record the reminder
+      // Record reminder in history
       await ctx.db.insert(contractReminders).values({
         contractId: contract.id,
         userId: ctx.user.id,

@@ -31,7 +31,7 @@ export function InvoicingTab({ settings, onRefetch }: InvoicingTabProps) {
   const [invoicePrefix, setInvoicePrefix] = useState("INV");
   const [invoiceNotes, setInvoiceNotes] = useState("");
   const [allowPartialPayments, setAllowPartialPayments] = useState(false);
-  const [minimumPaymentPercent, setMinimumPaymentPercent] = useState("");
+  const [minimumPaymentPercent, setMinimumPaymentPercent] = useState("25");
 
   useEffect(() => {
     const d = settings.invoiceDefaults;
@@ -40,7 +40,7 @@ export function InvoicingTab({ settings, onRefetch }: InvoicingTabProps) {
     setInvoicePrefix(d.prefix || "INV");
     setInvoiceNotes(d.notes || "");
     setAllowPartialPayments(d.allowPartialPayments);
-    setMinimumPaymentPercent(d.minimumPaymentPercent?.toString() || "");
+    setMinimumPaymentPercent(d.minimumPaymentPercent?.toString() || "25");
   }, [settings]);
 
   const updateInvoiceDefaults = trpc.settings.updateInvoiceDefaults.useMutation({
