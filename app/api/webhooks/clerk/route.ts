@@ -22,9 +22,8 @@ export async function POST(req: Request) {
     return new Response("Error: Missing svix headers", { status: 400 });
   }
 
-  // Get the body
-  const payload = await req.json();
-  const body = JSON.stringify(payload);
+  // Get the raw body text (important for signature verification!)
+  const body = await req.text();
 
   // Create a new Svix instance with your secret
   const wh = new Webhook(WEBHOOK_SECRET);
@@ -52,16 +51,33 @@ export async function POST(req: Request) {
     const name = [first_name, last_name].filter(Boolean).join(" ") || "User";
 
     if (!email) {
+      console.error("Webhook user.created: No email found for user", id);
       return new Response("Error: No email found", { status: 400 });
     }
 
-    await db.insert(users).values({
-      clerkId: id,
-      email,
-      name,
-    });
+    try {
+      // Check if user already exists (in case of retry)
+      const existingUser = await db.query.users.findFirst({
+        where: eq(users.clerkId, id),
+      });
 
-    return new Response("User created", { status: 200 });
+      if (existingUser) {
+        console.log("User already exists, skipping creation:", id);
+        return new Response("User already exists", { status: 200 });
+      }
+
+      await db.insert(users).values({
+        clerkId: id,
+        email,
+        name,
+      });
+
+      console.log("User created successfully:", id);
+      return new Response("User created", { status: 200 });
+    } catch (error) {
+      console.error("Error creating user:", error);
+      return new Response("Error: Failed to create user", { status: 500 });
+    }
   }
 
   if (eventType === "user.updated") {
@@ -71,25 +87,39 @@ export async function POST(req: Request) {
     const name = [first_name, last_name].filter(Boolean).join(" ") || "User";
 
     if (!email) {
+      console.error("Webhook user.updated: No email found for user", id);
       return new Response("Error: No email found", { status: 400 });
     }
 
-    await db
-      .update(users)
-      .set({ email, name })
-      .where(eq(users.clerkId, id));
+    try {
+      await db
+        .update(users)
+        .set({ email, name, updatedAt: new Date() })
+        .where(eq(users.clerkId, id));
 
-    return new Response("User updated", { status: 200 });
+      console.log("User updated successfully:", id);
+      return new Response("User updated", { status: 200 });
+    } catch (error) {
+      console.error("Error updating user:", error);
+      return new Response("Error: Failed to update user", { status: 500 });
+    }
   }
 
   if (eventType === "user.deleted") {
     const { id } = evt.data;
 
-    if (id) {
-      await db.delete(users).where(eq(users.clerkId, id));
+    if (!id) {
+      return new Response("Error: No user id", { status: 400 });
     }
 
-    return new Response("User deleted", { status: 200 });
+    try {
+      await db.delete(users).where(eq(users.clerkId, id));
+      console.log("User deleted successfully:", id);
+      return new Response("User deleted", { status: 200 });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      return new Response("Error: Failed to delete user", { status: 500 });
+    }
   }
 
   return new Response("Webhook received", { status: 200 });
