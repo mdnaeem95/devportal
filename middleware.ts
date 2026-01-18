@@ -4,13 +4,19 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
   "/sign-up(.*)",
-  "/p/(.*)",      // Public project pages
-  "/sign/(.*)",   // Contract signing pages
-  "/pay/(.*)",    // Invoice payment pages
-  "/api/webhooks/(.*)",
+  "/p/(.*)",
+  "/sign/(.*)",
+  "/pay/(.*)",
+  "/api/webhooks/clerk",      // Explicit path
+  "/api/webhooks/:path*",     // Or catch-all for any webhook
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
+  // Debug: log webhook requests
+  if (req.nextUrl.pathname.startsWith("/api/webhooks")) {
+    console.log("Webhook request:", req.method, req.nextUrl.pathname);
+  }
+  
   if (!isPublicRoute(req)) {
     await auth.protect();
   }
@@ -18,9 +24,7 @@ export default clerkMiddleware(async (auth, req) => {
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files
     "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    // Always run for API routes
     "/(api|trpc)(.*)",
   ],
 };
