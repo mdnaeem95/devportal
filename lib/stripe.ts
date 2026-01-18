@@ -14,20 +14,18 @@ interface CreateConnectAccountParams {
   userId: string;
   email: string;
   businessName?: string;
-  country?: string;
 }
 
 /**
  * Create a Stripe Connect account for a freelancer
  */
 export async function createConnectAccount(params: CreateConnectAccountParams) {
-  const { userId, email, businessName, country = "US" } = params;
+  const { userId, email, businessName } = params;
 
   const account = await stripe.accounts.create({
-    type: "express", // Express accounts are easiest to set up
+    type: "express",
     email,
-    country,
-    business_type: "individual",
+    // Don't specify country - Stripe will ask during onboarding
     business_profile: {
       name: businessName,
       product_description: "Freelance software development services",
@@ -39,6 +37,7 @@ export async function createConnectAccount(params: CreateConnectAccountParams) {
       card_payments: { requested: true },
       transfers: { requested: true },
     },
+    // Also remove business_type - let user choose during onboarding
   });
 
   return account;

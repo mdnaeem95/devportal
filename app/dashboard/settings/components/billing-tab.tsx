@@ -25,7 +25,7 @@ interface BillingTabProps {
 export function BillingTab({ stripeStatus, stripeLoading, onStripeRefetch }: BillingTabProps) {
   const getOnboardingLink = trpc.stripe.getOnboardingLink.useMutation({
     onSuccess: (data) => {
-      if (data.url) window.location.href = data.url;
+      if (data.url) window.open(data.url, "_blank");
     },
     onError: (error) => toast.error(error.message || "Failed to start Stripe onboarding"),
   });
@@ -146,7 +146,7 @@ export function BillingTab({ stripeStatus, stripeLoading, onStripeRefetch }: Bil
                   {stripeStatus.requirements.currently_due.slice(0, 3).map((req: string) => (
                     <li key={req} className="flex items-center gap-2">
                       <AlertCircle className="h-3 w-3 text-amber-500" />
-                      {req.replace(/_/g, " ").replace(/\./g, " → ")}
+                      {req.replace(/_/g, " ").replace(/\./g, " â†’ ")}
                     </li>
                   ))}
                   {stripeStatus.requirements.currently_due.length > 3 && (
