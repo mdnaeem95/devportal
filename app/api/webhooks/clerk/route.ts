@@ -5,6 +5,10 @@ import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 
+export async function GET() {
+  return new Response("Clerk webhook endpoint is working", { status: 200 });
+}
+
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
