@@ -10,3 +10,4 @@ export * from "./templates";
 export * from "./time-entries";
 export * from "./client-notes";
 export * from "./contract-reminders";
+export * from "./notifications";

@@ -10,7 +10,7 @@ interface EmailLayoutProps {
 
 export function EmailLayout({
   preview,
-  businessName = "Zoho",
+  businessName = "Zovo",
   businessLogo,
   children,
 }: EmailLayoutProps) {
@@ -43,8 +43,8 @@ export function EmailLayout({
           <Section style={footer}>
             <Text style={footerText}>
               Sent via{" "}
-              <Link href="https://zoho.dev" style={footerLink}>
-                Zoho
+              <Link href="https://zovo.dev" style={footerLink}>
+                Zovo
               </Link>
               {" · "}The professional backend for freelance developers
             </Text>

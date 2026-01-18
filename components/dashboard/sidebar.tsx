@@ -32,7 +32,7 @@ export function Sidebar() {
         <div className="flex h-8 w-8 items-center justify-center rounded-lg gradient-primary shadow-lg shadow-primary/25">
           <Sparkles className="h-4 w-4 text-white" />
         </div>
-        <span className="text-lg font-bold gradient-text">Zoho</span>
+        <span className="text-lg font-bold gradient-text">Zovo</span>
       </div>
 
       {/* Primary Navigation */}

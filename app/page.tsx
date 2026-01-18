@@ -28,7 +28,7 @@ export default function HomePage() {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg gradient-primary">
               <FolderKanban className="h-4 w-4 text-white" />
             </div>
-            <span className="text-lg font-semibold tracking-tight">Zoho</span>
+            <span className="text-lg font-semibold tracking-tight">Zovo</span>
           </Link>
 
           <nav className="hidden items-center gap-8 md:flex">
@@ -117,7 +117,7 @@ export default function HomePage() {
               <div className="terminal-dot terminal-dot-red" />
               <div className="terminal-dot terminal-dot-yellow" />
               <div className="terminal-dot terminal-dot-green" />
-              <span className="ml-4 text-sm text-muted-foreground">zoho — dashboard</span>
+              <span className="ml-4 text-sm text-muted-foreground">Zovo — dashboard</span>
             </div>
             <div className="p-6 font-mono text-sm">
               <div className="space-y-3">
@@ -310,7 +310,7 @@ export default function HomePage() {
                   "Priority support",
                   "Advanced analytics",
                   "API access",
-                  "Remove Zoho branding",
+                  "Remove Zovo branding",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-3 text-sm">
                     <Check className="h-4 w-4 text-success shrink-0" />
@@ -352,7 +352,7 @@ export default function HomePage() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg gradient-primary">
                 <FolderKanban className="h-4 w-4 text-white" />
               </div>
-              <span className="font-semibold">Zoho</span>
+              <span className="font-semibold">Zovo</span>
             </div>
 
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
@@ -372,7 +372,7 @@ export default function HomePage() {
           </div>
 
           <div className="mt-8 pt-8 border-t border-border/50 text-center text-sm text-muted-foreground">
-            © {new Date().getFullYear()} Zoho. All rights reserved.
+            © {new Date().getFullYear()} Zovo. All rights reserved.
           </div>
         </div>
       </footer>

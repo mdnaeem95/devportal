@@ -1,8 +1,28 @@
 import { z } from "zod";
 import { router, protectedProcedure, publicProcedure } from "../trpc";
-import { timeEntries, timeTrackingSettings, projects, milestones, invoices, type TimeEntryEdit } from "../db/schema";
+import { timeEntries, users, projects, milestones, invoices, type TimeEntryEdit } from "../db/schema";
 import { eq, desc, and, gte, lte, isNull, sql, or, lt, gt } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+
+// Helper to get user's time tracking settings from users table
+async function getUserTimeSettings(db: any, userId: string) {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+  
+  return {
+    defaultHourlyRate: user?.defaultHourlyRate ?? null,
+    maxRetroactiveDays: user?.maxRetroactiveDays ?? 7,
+    dailyHourWarning: user?.dailyHourWarning ?? 720,
+    idleTimeoutMinutes: user?.idleTimeoutMinutes ?? 30,
+    roundToMinutes: user?.roundToMinutes ?? 0,
+    minimumEntryMinutes: user?.minimumEntryMinutes ?? 1,
+    allowOverlapping: user?.allowOverlapping ?? false,
+    clientVisibleLogs: user?.clientVisibleLogs ?? true,
+    requireDescription: user?.requireDescription ?? false,
+    autoStopAtMidnight: user?.autoStopAtMidnight ?? true,
+  };
+}
 
 // ============================================
 // HELPER FUNCTIONS
@@ -92,10 +112,8 @@ export const timeTrackingRouter = router({
         }
       }
 
-      // Get user's default hourly rate
-      const settings = await ctx.db.query.timeTrackingSettings.findFirst({
-        where: eq(timeTrackingSettings.userId, ctx.user.id),
-      });
+      // Get user's default hourly rate from settings
+      const settings = await getUserTimeSettings(ctx.db, ctx.user.id);
 
       const now = new Date();
 
@@ -139,9 +157,7 @@ export const timeTrackingRouter = router({
       }
 
       // Get settings for rounding
-      const settings = await ctx.db.query.timeTrackingSettings.findFirst({
-        where: eq(timeTrackingSettings.userId, ctx.user.id),
-      });
+      const settings = await getUserTimeSettings(ctx.db, ctx.user.id);
 
       const now = new Date();
       let duration = calculateDuration(entry.startTime, now);
@@ -238,9 +254,7 @@ export const timeTrackingRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       // Get user settings
-      const settings = await ctx.db.query.timeTrackingSettings.findFirst({
-        where: eq(timeTrackingSettings.userId, ctx.user.id),
-      });
+      const settings = await getUserTimeSettings(ctx.db, ctx.user.id);
 
       // ANTI-ABUSE: Check retroactive limit
       const maxRetroactiveDays = settings?.maxRetroactiveDays ?? 7;
@@ -826,29 +840,14 @@ export const timeTrackingRouter = router({
 
   // Get user's time tracking settings
   getSettings: protectedProcedure.query(async ({ ctx }) => {
-    let settings = await ctx.db.query.timeTrackingSettings.findFirst({
-      where: eq(timeTrackingSettings.userId, ctx.user.id),
-    });
-
-    // Create default settings if none exist
-    if (!settings) {
-      const [newSettings] = await ctx.db
-        .insert(timeTrackingSettings)
-        .values({
-          userId: ctx.user.id,
-        })
-        .returning();
-      settings = newSettings;
-    }
-
-    return settings;
+    return await getUserTimeSettings(ctx.db, ctx.user.id);
   }),
 
-  // Update time tracking settings
+  // Update time tracking settings (delegates to settings router, kept for backward compatibility)
   updateSettings: protectedProcedure
     .input(
       z.object({
-        defaultHourlyRate: z.number().min(0).optional(),
+        defaultHourlyRate: z.number().min(0).optional().nullable(),
         maxRetroactiveDays: z.number().min(0).max(365).optional(),
         dailyHourWarning: z.number().min(60).max(1440).optional(),
         idleTimeoutMinutes: z.number().min(0).max(120).optional(),
@@ -861,32 +860,47 @@ export const timeTrackingRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // Get or create settings
-      let settings = await ctx.db.query.timeTrackingSettings.findFirst({
-        where: eq(timeTrackingSettings.userId, ctx.user.id),
-      });
+      const updateData: Record<string, unknown> = {
+        updatedAt: new Date(),
+      };
 
-      if (!settings) {
-        const [newSettings] = await ctx.db
-          .insert(timeTrackingSettings)
-          .values({
-            userId: ctx.user.id,
-            ...input,
-          })
-          .returning();
-        return newSettings;
+      if (input.defaultHourlyRate !== undefined) {
+        updateData.defaultHourlyRate = input.defaultHourlyRate;
+      }
+      if (input.maxRetroactiveDays !== undefined) {
+        updateData.maxRetroactiveDays = input.maxRetroactiveDays;
+      }
+      if (input.dailyHourWarning !== undefined) {
+        updateData.dailyHourWarning = input.dailyHourWarning;
+      }
+      if (input.idleTimeoutMinutes !== undefined) {
+        updateData.idleTimeoutMinutes = input.idleTimeoutMinutes;
+      }
+      if (input.roundToMinutes !== undefined) {
+        updateData.roundToMinutes = input.roundToMinutes;
+      }
+      if (input.minimumEntryMinutes !== undefined) {
+        updateData.minimumEntryMinutes = input.minimumEntryMinutes;
+      }
+      if (input.allowOverlapping !== undefined) {
+        updateData.allowOverlapping = input.allowOverlapping;
+      }
+      if (input.clientVisibleLogs !== undefined) {
+        updateData.clientVisibleLogs = input.clientVisibleLogs;
+      }
+      if (input.requireDescription !== undefined) {
+        updateData.requireDescription = input.requireDescription;
+      }
+      if (input.autoStopAtMidnight !== undefined) {
+        updateData.autoStopAtMidnight = input.autoStopAtMidnight;
       }
 
-      const [updated] = await ctx.db
-        .update(timeTrackingSettings)
-        .set({
-          ...input,
-          updatedAt: new Date(),
-        })
-        .where(eq(timeTrackingSettings.userId, ctx.user.id))
-        .returning();
+      await ctx.db
+        .update(users)
+        .set(updateData)
+        .where(eq(users.id, ctx.user.id));
 
-      return updated;
+      return await getUserTimeSettings(ctx.db, ctx.user.id);
     }),
 
   // ============================================
@@ -910,12 +924,10 @@ export const timeTrackingRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
       }
 
-      // Check if user has client-visible logs enabled
-      const settings = await ctx.db.query.timeTrackingSettings.findFirst({
-        where: eq(timeTrackingSettings.userId, project.userId),
-      });
+      // Check if user has client-visible logs enabled (read from users table)
+      const settings = await getUserTimeSettings(ctx.db, project.userId);
 
-      if (!settings?.clientVisibleLogs) {
+      if (!settings.clientVisibleLogs) {
         return { entries: [], enabled: false };
       }
 

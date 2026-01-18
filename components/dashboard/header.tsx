@@ -1,9 +1,10 @@
 "use client";
 
 import { UserButton } from "@clerk/nextjs";
-import { Bell, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TimerWidget } from "./timer-widget";
+import { NotificationsPopover } from "./notifications-popover";
 
 interface HeaderProps {
   title: string;
@@ -48,15 +49,13 @@ export function Header({ title, description, action, onSearchClick }: HeaderProp
           <Search className="h-4 w-4" />
         </Button>
 
-        {/* Timer Widget - NEW */}
+        {/* Timer Widget */}
         <TimerWidget />
 
         {action}
 
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-4 w-4" />
-          <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary animate-pulse" />
-        </Button>
+        {/* Notifications Popover */}
+        <NotificationsPopover />
 
         <div className="ml-1 h-8 w-px bg-border/50" />
 

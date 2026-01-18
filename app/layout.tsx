@@ -6,8 +6,8 @@ import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: {
-    default: "Zoho",
-    template: "%s | Zoho",
+    default: "Zovo",
+    template: "%s | Zovo",
   },
   description:
     "The professional backend for freelance developers who work with direct clients.",

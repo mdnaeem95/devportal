@@ -10,6 +10,7 @@ import { stripeRouter } from "./stripe";
 import { settingsRouter } from "./settings";
 import { timeTrackingRouter } from "./time-tracking";
 import { milestoneRouter } from "./milestones";
+import { notificationRouter } from "./notifications";
 
 export const appRouter = router({
   clients: clientRouter,
@@ -23,6 +24,7 @@ export const appRouter = router({
   settings: settingsRouter,
   timeTracking: timeTrackingRouter,
   milestones: milestoneRouter,
+  notifications: notificationRouter
 });
 
 export type AppRouter = typeof appRouter;
