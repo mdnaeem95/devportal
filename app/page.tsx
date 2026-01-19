@@ -356,8 +356,8 @@ export default function HomePage() {
             </div>
 
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
-              <Link href="#" className="hover:text-foreground transition-colors">Privacy</Link>
-              <Link href="#" className="hover:text-foreground transition-colors">Terms</Link>
+              <Link href="/public/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
+              <Link href="/public/terms" className="hover:text-foreground transition-colors">Terms</Link>
               <Link href="#" className="hover:text-foreground transition-colors">Docs</Link>
             </div>
 
