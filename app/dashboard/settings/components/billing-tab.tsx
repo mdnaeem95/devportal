@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Loader2, Check, AlertCircle, ExternalLink } from "lucide-react";
@@ -23,6 +25,8 @@ interface BillingTabProps {
 }
 
 export function BillingTab({ stripeStatus, stripeLoading, onStripeRefetch }: BillingTabProps) {
+  const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
+
   const getOnboardingLink = trpc.stripe.getOnboardingLink.useMutation({
     onSuccess: (data) => {
       if (data.url) window.open(data.url, "_blank");
@@ -46,9 +50,8 @@ export function BillingTab({ stripeStatus, stripeLoading, onStripeRefetch }: Bil
   });
 
   const handleDisconnect = () => {
-    if (confirm("Are you sure you want to disconnect Stripe? You won't be able to accept payments until you reconnect.")) {
-      disconnectStripe.mutate();
-    }
+    setShowDisconnectDialog(false);
+    disconnectStripe.mutate();
   };
 
   return (
@@ -111,7 +114,7 @@ export function BillingTab({ stripeStatus, stripeLoading, onStripeRefetch }: Bil
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={handleDisconnect}
+                      onClick={() => setShowDisconnectDialog(true)}
                       disabled={disconnectStripe.isPending}
                       className="text-destructive hover:text-destructive"
                     >
@@ -134,7 +137,7 @@ export function BillingTab({ stripeStatus, stripeLoading, onStripeRefetch }: Bil
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={handleDisconnect}
+                      onClick={() => setShowDisconnectDialog(true)}
                       disabled={disconnectStripe.isPending}
                       className="text-destructive hover:text-destructive"
                     >
@@ -226,6 +229,33 @@ export function BillingTab({ stripeStatus, stripeLoading, onStripeRefetch }: Bil
           </div>
         </CardContent>
       </Card>
+
+      {/* Disconnect Confirmation Dialog */}
+      <Dialog open={showDisconnectDialog} onOpenChange={setShowDisconnectDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Disconnect Stripe?</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to disconnect Stripe? You won&apos;t be able to accept payments from clients until you reconnect.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDisconnectDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDisconnect}
+              disabled={disconnectStripe.isPending}
+            >
+              {disconnectStripe.isPending && (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              )}
+              Disconnect
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
