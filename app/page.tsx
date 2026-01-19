@@ -1,19 +1,6 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import {
-  FolderKanban,
-  FileText,
-  CreditCard,
-  Package,
-  ArrowRight,
-  Check,
-  Terminal,
-  GitBranch,
-  Zap,
-  Shield,
-  Github,
-  Twitter,
-} from "lucide-react";
+import { FolderKanban, FileText, CreditCard, Package, ArrowRight, Check, Terminal, GitBranch, Zap, Shield, Github, Twitter } from "lucide-react";
 
 export default function HomePage() {
   return (
@@ -38,7 +25,7 @@ export default function HomePage() {
             <Link href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
               Pricing
             </Link>
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <Link href="/docs" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
               Docs
             </Link>
           </nav>
@@ -358,7 +345,7 @@ export default function HomePage() {
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
               <Link href="/public/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
               <Link href="/public/terms" className="hover:text-foreground transition-colors">Terms</Link>
-              <Link href="#" className="hover:text-foreground transition-colors">Docs</Link>
+              <Link href="/docs" className="hover:text-foreground transition-colors">Docs</Link>
             </div>
 
             <div className="flex items-center gap-4">

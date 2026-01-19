@@ -7,6 +7,7 @@ const isPublicRoute = createRouteMatcher([
   "/public/(.*)",
   "/sign/(.*)",
   "/pay/(.*)",
+  "/docs(.*)",
   "/api/webhooks/clerk",      // Explicit path
   "/api/webhooks/:path*",     // Or catch-all for any webhook
 ]);
