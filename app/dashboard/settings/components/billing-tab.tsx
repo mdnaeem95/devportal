@@ -118,6 +118,29 @@ export function BillingTab({ stripeStatus, stripeLoading, onStripeRefetch }: Bil
                       Disconnect
                     </Button>
                   </>
+                ) : stripeStatus?.accountId ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => getOnboardingLink.mutate()}
+                      disabled={getOnboardingLink.isPending}
+                    >
+                      {getOnboardingLink.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "Continue Setup"
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleDisconnect}
+                      disabled={disconnectStripe.isPending}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      Start Over
+                    </Button>
+                  </>
                 ) : (
                   <Button
                     variant="outline"
@@ -126,8 +149,6 @@ export function BillingTab({ stripeStatus, stripeLoading, onStripeRefetch }: Bil
                   >
                     {getOnboardingLink.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : stripeStatus?.accountId ? (
-                      "Continue Setup"
                     ) : (
                       "Connect Stripe"
                     )}
