@@ -230,7 +230,7 @@ export default function InvoiceDetailPage() {
 
   const copyPayLink = () => {
     if (invoice?.payToken) {
-      const url = `${window.location.origin}/pay/${invoice.payToken}`;
+      const url = `${window.location.origin}/public/pay/${invoice.payToken}`;
       navigator.clipboard.writeText(url);
       setCopied(true);
       toast.success("Payment link copied!");

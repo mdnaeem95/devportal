@@ -187,7 +187,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   });
 
   // Send confirmation emails
-  const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/pay/${invoice.payToken}`;
+  const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/public/pay/${invoice.payToken}`;
 
   if (isNowFullyPaid) {
     // Send full payment confirmation

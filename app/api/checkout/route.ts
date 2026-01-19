@@ -110,8 +110,8 @@ export async function POST(request: NextRequest) {
       customerName: invoice.client.name,
       description,
       connectedAccountId: user.stripeAccountId,
-      successUrl: `${baseUrl}/pay/${payToken}?success=true&amount=${paymentAmount}`,
-      cancelUrl: `${baseUrl}/pay/${payToken}?cancelled=true`,
+      successUrl: `${baseUrl}/public/pay/${payToken}?success=true&amount=${paymentAmount}`,
+      cancelUrl: `${baseUrl}/public/pay/${payToken}?cancelled=true`,
       metadata: {
         clientId: invoice.clientId,
         projectId: invoice.projectId || "",

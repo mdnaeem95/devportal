@@ -466,7 +466,7 @@ export const invoiceRouter = router({
         .returning();
 
       // Send email
-      const payUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/pay/${payToken}`;
+      const payUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/public/pay/${payToken}`;
       const lineItemsForEmail = (invoice.lineItems as Array<{ description: string; amount: number }>).map(
         (item) => ({
           description: item.description,
@@ -557,7 +557,7 @@ export const invoiceRouter = router({
           .where(eq(invoices.id, input.id));
       }
 
-      const payUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/pay/${invoice.payToken}`;
+      const payUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/public/pay/${invoice.payToken}`;
 
       // FIXED: Use correct property names matching SendPaymentReminderEmailParams
       await sendPaymentReminderEmail({
@@ -813,7 +813,7 @@ export const invoiceRouter = router({
         where: eq(users.id, ctx.user.id),
       });
 
-      const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/pay/${invoice.payToken}`;
+      const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/public/pay/${invoice.payToken}`;
 
       // Send appropriate email
       if (isFullyPaid) {
@@ -927,7 +927,7 @@ export const invoiceRouter = router({
       });
 
       // Send confirmation emails
-      const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/pay/${invoice.payToken}`;
+      const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/public/pay/${invoice.payToken}`;
 
       await sendInvoicePaidEmails({
         clientEmail: invoice.client.email,
@@ -1190,7 +1190,7 @@ export const invoiceRouter = router({
       });
 
       // Send confirmation emails
-      const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/pay/${input.token}`;
+      const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/public/pay/${input.token}`;
 
       if (isFullyPaid) {
         await sendInvoicePaidEmails({
